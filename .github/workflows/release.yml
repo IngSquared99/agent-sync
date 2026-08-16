@@ -1,0 +1,36 @@
+# Release pipeline: triggered automatically by pushing a v-prefixed tag
+# (e.g. v0.1.0). Tests run first; a failed test run publishes nothing.
+name: release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write   # allow creating the Release and uploading assets
+
+jobs:
+  goreleaser:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0    # goreleaser needs full history for the changelog
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: stable
+          cache: false      # zero-dependency project: no go.sum, nothing to cache
+
+      - name: Run tests
+        run: go test ./...
+
+      - name: Run GoReleaser
+        uses: goreleaser/goreleaser-action@v6
+        with:
+          distribution: goreleaser
+          version: "~> v2"
+          args: release --clean
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

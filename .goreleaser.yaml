@@ -1,0 +1,58 @@
+# goreleaser release config
+# Purpose: invoked by GitHub Actions on tag push; cross-compiles six
+# platform builds and uploads them to Releases.
+# Local dry run (no publish): goreleaser release --snapshot --clean
+version: 2
+
+project_name: agsy
+
+before:
+  hooks:
+    - go test ./...
+
+builds:
+  - binary: agsy            # explicit binary name (don't default to the repo name agent-sync)
+    main: ./cmd/agsy
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    ldflags:
+      - -s -w
+      - -X main.version={{.Version}}
+      - -X main.commit={{.ShortCommit}}
+      - -X main.date={{.Date}}
+
+archives:
+  # No version in file names: keeps releases/latest/download/<name> as a
+  # permanent URL, so the one-line curl install in the README never needs
+  # updating. Versions are visible in checksums.txt and `agsy version`.
+  # Names use plain words (mac_apple_silicon / mac_intel / windows_x64 ...)
+  # instead of GOOS/GOARCH jargon.
+  - name_template: >-
+      {{ .ProjectName }}_
+      {{- if eq .Os "darwin" }}mac{{- else }}{{ .Os }}{{ end }}_
+      {{- if and (eq .Os "darwin") (eq .Arch "arm64") }}apple_silicon
+      {{- else if and (eq .Os "darwin") (eq .Arch "amd64") }}intel
+      {{- else if eq .Arch "amd64" }}x64
+      {{- else }}{{ .Arch }}{{ end }}
+    formats: [tar.gz]
+    format_overrides:
+      - goos: windows
+        formats: [zip]      # Windows users expect zip
+
+checksum:
+  name_template: "checksums.txt"
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
+      - "^chore:"

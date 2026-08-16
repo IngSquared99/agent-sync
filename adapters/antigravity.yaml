@@ -1,0 +1,10 @@
+# Antigravity 掛載預設集
+name: antigravity
+display: Antigravity
+bucket: agents
+mount:
+  dir: .agents
+  links:
+    rules: rules
+    skills: skills
+    workflows: workflows/agents

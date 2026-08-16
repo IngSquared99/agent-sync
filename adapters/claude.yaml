@@ -1,0 +1,10 @@
+# Claude Code 掛載預設集
+name: claude
+display: Claude Code
+bucket: claude
+mount:
+  dir: .claude
+  links:
+    rules: rules
+    skills: skills
+    commands: workflows/claude
