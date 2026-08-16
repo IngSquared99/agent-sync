@@ -17,9 +17,9 @@ curl -fsSL https://raw.githubusercontent.com/IngSquared99/agent-sync/main/instal
 irm https://raw.githubusercontent.com/IngSquared99/agent-sync/main/install.ps1 | iex
 ```
 
-腳本做的事很單純：偵測你的系統與晶片 → 從
-[Releases](https://github.com/IngSquared99/agent-sync/releases) 下載對應版本 → 放進 PATH。
-內容就幾十行，不放心可以先點開看：
+腳本會偵測系統與晶片 → 從
+[Releases](https://github.com/IngSquared99/agent-sync/releases) 下載對應版本 → 驗證 SHA-256 檢查碼 → 放進 PATH。
+內容僅數十行，可先開啟檢視：
 [install.sh](https://github.com/IngSquared99/agent-sync/blob/main/install.sh) /
 [install.ps1](https://github.com/IngSquared99/agent-sync/blob/main/install.ps1)。
 

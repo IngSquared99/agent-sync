@@ -1,5 +1,6 @@
-# OpenAI Codex 掛載預設集
-# 注意:依 Codex CLI 的自訂 prompts 慣例撰寫,出貨前需實測驗證專案層級支援度
+# OpenAI Codex mount preset
+# Note: follows the Codex CLI custom-prompts convention; project-level
+# support still needs real-world verification before shipping.
 name: codex
 display: OpenAI Codex
 bucket: codex

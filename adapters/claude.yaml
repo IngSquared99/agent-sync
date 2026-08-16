@@ -1,4 +1,4 @@
-# Claude Code 掛載預設集
+# Claude Code mount preset
 name: claude
 display: Claude Code
 bucket: claude

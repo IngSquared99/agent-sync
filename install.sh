@@ -1,19 +1,21 @@
 #!/bin/sh
-# agsy one-line installer (macOS / Linux)
-# 用法:curl -fsSL https://raw.githubusercontent.com/IngSquared99/agent-sync/main/install.sh | sh
-# 行為:偵測平台 → 從 GitHub Releases 下載對應版本 → 解壓 → 安裝到 /usr/local/bin
-# 環境變數:
-#   AGSY_INSTALL_DIR  覆寫安裝目錄(預設 /usr/local/bin)
-#   AGSY_DRYRUN=1     只印出將執行的動作,不下載不安裝(供測試)
+# agsy installer for macOS / Linux.
+# Usage: curl -fsSL https://raw.githubusercontent.com/IngSquared99/agent-sync/main/install.sh | sh
+# Steps: detect OS/arch -> download the matching release archive and checksums.txt
+#        -> verify SHA-256 -> install the binary into INSTALL_DIR.
+# Environment overrides:
+#   AGSY_INSTALL_DIR  install directory (default: /usr/local/bin)
+#   AGSY_DRYRUN=1     print planned actions without downloading or installing
 set -eu
 
 REPO="IngSquared99/agent-sync"
 INSTALL_DIR="${AGSY_INSTALL_DIR:-/usr/local/bin}"
+BASE="https://github.com/$REPO/releases/latest/download"
 
 os="$(uname -s)"
 arch="$(uname -m)"
 
-# 平台 → Releases 檔名對照(與 .goreleaser.yaml 的 name_template 一致)
+# Map platform to release asset names (must match name_template in .goreleaser.yaml).
 case "$os" in
   Darwin)
     case "$arch" in
@@ -32,21 +34,41 @@ case "$os" in
     exit 1 ;;
 esac
 
-url="https://github.com/$REPO/releases/latest/download/$file"
-
 if [ "${AGSY_DRYRUN:-}" = "1" ]; then
-  echo "would download: $url"
-  echo "would install to: $INSTALL_DIR/agsy"
+  echo "would download: $BASE/$file"
+  echo "would verify:   $BASE/checksums.txt"
+  echo "would install:  $INSTALL_DIR/agsy"
   exit 0
 fi
 
-# 下載與解壓都在暫存目錄進行,結束時自動清理
+# Download and extract inside a temp directory; cleaned up on exit.
 tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
 
 echo "downloading $file ..."
-curl -fsSL "$url" -o "$tmp/agsy.tar.gz"
-tar -xzf "$tmp/agsy.tar.gz" -C "$tmp"
+curl -fsSL "$BASE/$file" -o "$tmp/$file"
+curl -fsSL "$BASE/checksums.txt" -o "$tmp/checksums.txt"
+
+# Verify SHA-256 against the checksum file published with the release.
+# This defends against corrupted or tampered downloads in transit; it does not
+# (and cannot) defend against a compromised release itself.
+expected="$(awk -v f="$file" '$2 == f { print $1 }' "$tmp/checksums.txt")"
+if [ -z "$expected" ]; then
+  echo "checksum entry for $file not found in checksums.txt" >&2
+  exit 1
+fi
+if command -v sha256sum >/dev/null 2>&1; then
+  actual="$(sha256sum "$tmp/$file" | awk '{ print $1 }')"
+else
+  actual="$(shasum -a 256 "$tmp/$file" | awk '{ print $1 }')"
+fi
+if [ "$actual" != "$expected" ]; then
+  echo "checksum mismatch for $file (expected $expected, got $actual)" >&2
+  exit 1
+fi
+echo "checksum OK"
+
+tar -xzf "$tmp/$file" -C "$tmp"
 
 echo "installing to $INSTALL_DIR (your password may be asked) ..."
 if [ -w "$INSTALL_DIR" ]; then

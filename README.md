@@ -286,7 +286,7 @@ curl -fsSL https://raw.githubusercontent.com/IngSquared99/agent-sync/main/instal
 irm https://raw.githubusercontent.com/IngSquared99/agent-sync/main/install.ps1 | iex
 ```
 
-The script detects your platform, downloads the matching build from [Releases](https://github.com/IngSquared99/agent-sync/releases), and puts `agsy` on your PATH — it is a few dozen readable lines, feel free to inspect it first: [install.sh](install.sh) / [install.ps1](install.ps1).
+The script detects the OS and CPU architecture, downloads the matching build from [Releases](https://github.com/IngSquared99/agent-sync/releases), verifies its SHA-256 checksum, and puts `agsy` on the PATH. It is a few dozen lines and can be inspected before running: [install.sh](install.sh) / [install.ps1](install.ps1).
 
 ### Homebrew (Mac)
 

@@ -57,11 +57,10 @@ changelog:
       - "^test:"
       - "^chore:"
 
-# Homebrew tap:發版時自動更新 IngSquared99/homebrew-tap 裡的 cask,
-# 使用者即可 brew install IngSquared99/tap/agsy。
-# 前置需求(一次性):建立 public repo「homebrew-tap」,並在本 repo 的
-# Settings → Secrets and variables → Actions 加入 HOMEBREW_TAP_GITHUB_TOKEN
-# (一把對 homebrew-tap 有寫入權的 Personal Access Token)。
+# Homebrew tap: on each release goreleaser pushes an updated cask to
+# IngSquared99/homebrew-tap, so users can `brew install IngSquared99/tap/agsy`.
+# One-time setup: create the public repo "homebrew-tap", then add a PAT with
+# write access to it as the HOMEBREW_TAP_GITHUB_TOKEN Actions secret.
 homebrew_casks:
   - name: agsy
     repository:
@@ -70,8 +69,9 @@ homebrew_casks:
       token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
     homepage: https://github.com/IngSquared99/agent-sync
     description: "Sync AI rules to every tool"
-    # 未付費簽章的 binary:安裝時自動移除 macOS 隔離標記(官方建議作法),
-    # 使用者就不會遇到「無法驗證開發者」的攔截。
+    # The binary is not signed/notarized. Drop the macOS quarantine flag at
+    # install time (the approach recommended by the goreleaser docs) so
+    # Gatekeeper does not block the first run.
     hooks:
       post:
         install: |

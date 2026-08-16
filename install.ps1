@@ -1,25 +1,37 @@
-# agsy one-line installer (Windows PowerShell)
-# 用法:irm https://raw.githubusercontent.com/IngSquared99/agent-sync/main/install.ps1 | iex
-# 行為:偵測架構 → 從 GitHub Releases 下載 zip → 解壓到使用者程式目錄 → 加入 PATH
+# agsy installer for Windows (PowerShell).
+# Usage: irm https://raw.githubusercontent.com/IngSquared99/agent-sync/main/install.ps1 | iex
+# Steps: detect architecture -> download the release zip and checksums.txt
+#        -> verify SHA-256 -> extract into the user's Programs directory -> add to PATH.
+# No administrator rights required; everything is user-scoped.
 $ErrorActionPreference = "Stop"
 
 $repo = "IngSquared99/agent-sync"
-# ARM64 筆電抓 arm64 版,其餘一律 x64
 $arch = if ($env:PROCESSOR_ARCHITECTURE -eq "ARM64") { "arm64" } else { "x64" }
 $file = "agsy_windows_$arch.zip"
-$url  = "https://github.com/$repo/releases/latest/download/$file"
+$base = "https://github.com/$repo/releases/latest/download"
 $dest = "$env:LOCALAPPDATA\Programs\agsy"
 
 Write-Host "downloading $file ..."
-$tmp = Join-Path $env:TEMP "agsy.zip"
-Invoke-WebRequest -Uri $url -OutFile $tmp
+$tmp = Join-Path $env:TEMP $file
+Invoke-WebRequest -Uri "$base/$file" -OutFile $tmp
+
+# Verify SHA-256 against the checksum file published with the release.
+# Defends against corrupted or tampered downloads in transit.
+$sums = (Invoke-WebRequest -Uri "$base/checksums.txt" -UseBasicParsing).Content
+$entry = $sums -split "`n" | Where-Object { $_ -match [regex]::Escape($file) } | Select-Object -First 1
+if (-not $entry) { throw "checksum entry for $file not found in checksums.txt" }
+$expected = ($entry -split "\s+")[0].ToLower()
+$actual = (Get-FileHash -Algorithm SHA256 -Path $tmp).Hash.ToLower()
+if ($actual -ne $expected) { throw "checksum mismatch for $file (expected $expected, got $actual)" }
+Write-Host "checksum OK"
+
 Expand-Archive -Path $tmp -DestinationPath $dest -Force
 Remove-Item $tmp
 
-# 加入使用者層級 PATH(已存在則略過;不需要系統管理員)
+# Append to the user-scoped PATH unless already present.
 $userPath = [Environment]::GetEnvironmentVariable("Path", "User")
 if ($userPath -notlike "*$dest*") {
   [Environment]::SetEnvironmentVariable("Path", "$userPath;$dest", "User")
-  Write-Host "added to PATH."
+  Write-Host "added $dest to PATH."
 }
 Write-Host "done. Open a NEW terminal window, then run: agsy version"
