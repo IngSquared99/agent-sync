@@ -7,9 +7,9 @@ import (
 	"runtime"
 	"strings"
 
+	"github.com/IngSquared99/agent-sync/i18n"
 	"github.com/IngSquared99/agent-sync/internal/build"
 	"github.com/IngSquared99/agent-sync/internal/config"
-	"github.com/IngSquared99/agent-sync/i18n"
 	"github.com/IngSquared99/agent-sync/internal/mount"
 	"github.com/IngSquared99/agent-sync/internal/prompt"
 	"github.com/IngSquared99/agent-sync/internal/state"
@@ -170,8 +170,8 @@ func cmdMenu() int {
 	if cfg, err := loadConfig(); err == nil {
 		if m, err := build.LoadManifest(cfg.OutDir()); err == nil {
 			if rep, err := state.Collect(cfg, m); err == nil {
-				summary = fmt.Sprintf(i18n.T("  Status: behind %d │ new %d │ local changes %d │ missing outputs %d │ mount issues %d\n"),
-					len(rep.Lags), len(rep.News), len(rep.Locals), len(rep.Gone), rep.LinkBad)
+				summary = fmt.Sprintf(i18n.T("  Status: behind %d │ new %d │ local changes %d │ untracked %d │ missing outputs %d │ mount issues %d\n"),
+					len(rep.Lags), len(rep.News), len(rep.Locals), len(rep.Untracked), len(rep.Gone), rep.LinkBad)
 				localN = len(rep.Locals)
 			}
 		} else {

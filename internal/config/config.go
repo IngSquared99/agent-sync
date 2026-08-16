@@ -254,9 +254,33 @@ func (c *Config) validateMount() []string {
 	for _, cat := range CategoryOrder {
 		validTops = append(validTops, c.Build.Categories[cat].To)
 	}
+	out := c.OutDir()
+	seenDir := map[string]bool{}
 	for _, m := range c.Mount {
 		if m.Dir == "" {
 			errs = append(errs, i18n.T("mount entry is missing dir"))
+		} else {
+			// mount.dir gets the same basic guards as build.out: duplicate dirs
+			// overwrite each other's links, a dir inside the output is wiped by
+			// apply, and a dir inside a source contaminates scanning.
+			if seenDir[m.Dir] {
+				errs = append(errs, fmt.Sprintf(i18n.T("mount dir %q appears more than once; merge its links into one entry"), m.Dir))
+			}
+			seenDir[m.Dir] = true
+			if abs, err := c.ExpandPath(m.Dir); err == nil {
+				if abs == out || IsAncestor(out, abs) {
+					errs = append(errs, fmt.Sprintf(i18n.T("mount dir %q lies inside build.out; apply empties that directory and the links would be wiped with it"), m.Dir))
+				}
+				for _, s := range c.Sources {
+					sabs, serr := c.ExpandPath(s)
+					if serr != nil {
+						continue
+					}
+					if abs == sabs || IsAncestor(sabs, abs) {
+						errs = append(errs, fmt.Sprintf(i18n.T("mount dir %q lies inside source %s; the link would be scanned as source content"), m.Dir, s))
+					}
+				}
+			}
 		}
 		if len(m.Links) == 0 {
 			errs = append(errs, fmt.Sprintf(i18n.T("mount %s is missing links"), m.Dir))

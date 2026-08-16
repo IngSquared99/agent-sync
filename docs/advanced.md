@@ -57,9 +57,10 @@ manifest 放在掛載工具寫得到的產物層，不能盲信；`agsy.yaml` �
 
 ## 已知邊界（使用前該知道的）
 
-**掛載端「新增」的檔案不受追蹤。** manifest 只記 build 放進產物的項目；
-AI 在 `.claude/` 裡**新建**的檔案（不是修改既有檔案）status 看不見、promote 認不得，
-下次 apply 會直接消失。AI 幫你新寫的東西想留，請手動搬進來源資料夾。
+**掛載端「新增」的檔案回寫不了，只能搬家。** manifest 只記 build 放進產物的項目；
+AI 在 `.claude/` 裡**新建**的檔案（不是修改既有檔案）沒有原家，promote 認不得。
+status 會把它列為「未追蹤」，apply 也會先列出、問過你才刪——但想留下它，
+唯一的路是手動搬進來源資料夾再 apply。
 
 **init 修改模式會正規化整份設定。** 手動改過 `categories`、`route.field`、
 部分 `route.default` 的專案，重跑 init 會被範本預設值取代——寫入前的 diff 是最後防線,

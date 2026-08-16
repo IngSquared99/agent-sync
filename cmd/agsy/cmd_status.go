@@ -5,8 +5,8 @@ import (
 	"os"
 	"strings"
 
-	"github.com/IngSquared99/agent-sync/internal/build"
 	"github.com/IngSquared99/agent-sync/i18n"
+	"github.com/IngSquared99/agent-sync/internal/build"
 	"github.com/IngSquared99/agent-sync/internal/mount"
 	"github.com/IngSquared99/agent-sync/internal/prompt"
 	"github.com/IngSquared99/agent-sync/internal/state"
@@ -42,6 +42,15 @@ func cmdStatus(withMenu bool) int {
 		}
 		fmt.Println(i18n.T("  Items from these sources are marked \"source path missing\" below — the path is gone, not the files deleted."))
 		fmt.Println(i18n.T("  Fix the paths and look again; apply also blocks rebuilding from an incomplete source list."))
+	}
+	if rep.ScanErr != nil {
+		fmt.Printf(i18n.T("\n⚠ source scan failed (%v); new-item detection did not run this time\n"), rep.ScanErr)
+	}
+	if len(rep.RouteErrors) > 0 {
+		fmt.Printf(i18n.T("\n⚠ %d workflow routing problems (apply will refuse to build; agsy plan lists them):\n"), len(rep.RouteErrors))
+		for _, e := range rep.RouteErrors {
+			fmt.Println("  -", e)
+		}
 	}
 
 	fmt.Printf(i18n.T("\n═══ sources → %s/ (the direction apply covers) ═══\n"), cfg.Build.Out)
@@ -90,12 +99,25 @@ func cmdStatus(withMenu bool) int {
 			if lc.Multiple {
 				extra += i18n.T("   ⚠ copies in multiple buckets were all modified")
 			}
+			if lc.SrcDeleted {
+				extra += i18n.T("   ⚠ the source file was deleted; promote will recreate it")
+			}
+			if lc.SrcRootGone {
+				extra += i18n.T("   ⚠ the whole source root is missing; promote is blocked")
+			}
 			files := ""
 			if n := len(lc.Files); n > 0 {
 				files = fmt.Sprintf(i18n.T("   %d files changed"), n)
 			}
 			fmt.Printf(i18n.T("  %-32s original source: %s%s%s\n"), lc.Item.Category+"/"+lc.Item.Name, lc.Item.From, files, extra)
 		}
+	}
+	if len(rep.Untracked) > 0 {
+		fmt.Printf(i18n.T("\nuntracked: %d files (added on the mount side, not in the manifest; promote cannot write them back, apply deletes them)\n"), len(rep.Untracked))
+		for _, u := range rep.Untracked {
+			fmt.Println("  ", u)
+		}
+		fmt.Println(i18n.T("  to keep one, move it into a source directory, then rerun agsy apply"))
 	}
 
 	fmt.Print(i18n.T("\n═══ mounts ═══\n\n"))
@@ -126,12 +148,15 @@ func cmdStatus(withMenu bool) int {
 	flush()
 
 	fmt.Println(i18n.T("\n═══ summary ═══"))
-	fmt.Printf(i18n.T("behind %d │ new %d │ local changes %d │ missing artifacts %d │ mount anomalies %d\n"),
-		len(rep.Lags), len(rep.News), len(rep.Locals), len(rep.Gone), rep.LinkBad)
+	fmt.Printf(i18n.T("behind %d │ new %d │ local changes %d │ untracked %d │ missing artifacts %d │ mount anomalies %d\n"),
+		len(rep.Lags), len(rep.News), len(rep.Locals), len(rep.Untracked), len(rep.Gone), rep.LinkBad)
 	if len(rep.Locals) > 0 {
 		fmt.Println(i18n.T("suggestion: run agsy promote first to keep the changes, then agsy apply to rebuild"))
 	} else if len(rep.Lags) > 0 || len(rep.News) > 0 || len(rep.Gone) > 0 || rep.LinkBad > 0 {
 		fmt.Println(i18n.T("suggestion: run agsy apply to rebuild"))
+	}
+	if len(rep.Untracked) > 0 {
+		fmt.Println(i18n.T("suggestion: move untracked files into a source first (apply deletes them), then rebuild"))
 	}
 
 	code := 0

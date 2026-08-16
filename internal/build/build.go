@@ -13,8 +13,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/IngSquared99/agent-sync/internal/config"
 	"github.com/IngSquared99/agent-sync/i18n"
+	"github.com/IngSquared99/agent-sync/internal/config"
 	"github.com/IngSquared99/agent-sync/internal/yaml"
 )
 
@@ -100,14 +100,15 @@ type Collision struct {
 // Plan is the complete computed result of one build (shared by plan and apply;
 // plan only computes, never writes)
 type Plan struct {
-	Sources    []SourceState
-	Items      []Item
-	Conflicts  []Conflict  // non-empty when on_conflict=error and names clash
-	Collisions []Collision // final output names collide
-	Skipped    []Item      // items dropped by the first strategy
-	Ignored    []Ignored   // files skipped during scanning for not matching the acceptance rules
-	NoBucket   []string    // workflows with default=[] and no target specified (warning)
-	Incomplete bool        // some source does not exist; the preview is incomplete
+	Sources     []SourceState
+	Items       []Item
+	Conflicts   []Conflict  // non-empty when on_conflict=error and names clash
+	Collisions  []Collision // final output names collide
+	Skipped     []Item      // items dropped by the first strategy
+	Ignored     []Ignored   // files skipped during scanning for not matching the acceptance rules
+	NoBucket    []string    // workflows with default=[] and no target specified (warning)
+	RouteErrors []string    // per-file routing problems (broken front matter, unknown bucket); collected so plan lists them all at once
+	Incomplete  bool        // some source does not exist; the preview is incomplete
 }
 
 // Accepts is the single source of truth for the acceptance rules (§12-8).
@@ -396,12 +397,23 @@ func frontMatter(path string) (map[string]interface{}, error) {
 		return nil, nil
 	}
 	rest := s[strings.Index(s, "\n")+1:]
-	end := strings.Index(rest, "\n---")
-	if end < 0 {
-		return nil, nil
+	// The closing delimiter must be a standalone line: a "\n---" substring
+	// search mistakes horizontal rules in the body for the close, and an
+	// unclosed block would have its body parsed as YAML.
+	var body []string
+	closed := false
+	for _, line := range strings.Split(rest, "\n") {
+		if strings.TrimRight(line, "\r") == "---" {
+			closed = true
+			break
+		}
+		body = append(body, line)
+	}
+	if !closed {
+		return nil, nil // no standalone closing line → not front matter
 	}
 	m := map[string]interface{}{}
-	if err := yaml.Unmarshal([]byte(rest[:end]), &m); err != nil {
+	if err := yaml.Unmarshal([]byte(strings.Join(body, "\n")), &m); err != nil {
 		return nil, fmt.Errorf(i18n.T("front-matter parse failed: %w"), err)
 	}
 	return m, nil
@@ -417,7 +429,10 @@ func routeWorkflows(cfg *config.Config, p *Plan) error {
 		}
 		fm, err := frontMatter(it.From)
 		if err != nil {
-			return fmt.Errorf("%s: %w", it.From, err)
+			// Collect instead of failing fast: one broken file must not hide the
+			// rest of the plan preview or disable status's new-item detection.
+			p.RouteErrors = append(p.RouteErrors, fmt.Sprintf("%s: %v", it.From, err))
+			continue
 		}
 		var targets []string
 		if fm != nil {
@@ -443,6 +458,7 @@ func routeWorkflows(cfg *config.Config, p *Plan) error {
 			it.RouteNote = fmt.Sprintf(i18n.T("no %s specified, default applied"), field)
 			continue
 		}
+		bad := false
 		for _, t := range targets {
 			ok := false
 			for _, b := range buckets {
@@ -452,8 +468,13 @@ func routeWorkflows(cfg *config.Config, p *Plan) error {
 				}
 			}
 			if !ok {
-				return fmt.Errorf(i18n.T("%s: %s refers to nonexistent bucket %q, valid values: %v"), it.Name, field, t, buckets)
+				p.RouteErrors = append(p.RouteErrors, fmt.Sprintf(i18n.T("%s: %s refers to nonexistent bucket %q, valid values: %v"), it.Name, field, t, buckets))
+				bad = true
+				break
 			}
+		}
+		if bad {
+			continue // file gets no bucket; Execute refuses while RouteErrors exist
 		}
 		it.Buckets = targets
 	}
@@ -482,6 +503,9 @@ func Execute(cfg *config.Config, p *Plan) (*Manifest, error) {
 	}
 	if len(p.Collisions) > 0 {
 		return nil, fmt.Errorf(i18n.T("final output names collide, cannot build"))
+	}
+	if len(p.RouteErrors) > 0 {
+		return nil, fmt.Errorf(i18n.T("workflow routing problems exist, cannot build"))
 	}
 	if p.Incomplete {
 		return nil, fmt.Errorf(i18n.T("some source paths do not exist; apply must not rebuild from an incomplete source list (plan can still preview)"))

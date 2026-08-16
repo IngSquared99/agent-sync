@@ -3,9 +3,9 @@ package main
 import (
 	"fmt"
 
+	"github.com/IngSquared99/agent-sync/i18n"
 	"github.com/IngSquared99/agent-sync/internal/build"
 	"github.com/IngSquared99/agent-sync/internal/config"
-	"github.com/IngSquared99/agent-sync/i18n"
 	"github.com/IngSquared99/agent-sync/internal/mount"
 )
 
@@ -96,6 +96,12 @@ func cmdPlan() int {
 			}
 		}
 	}
+	if len(p.RouteErrors) > 0 {
+		fmt.Println(i18n.T("\n✘ workflow routing problems (front-matter), apply will stop:"))
+		for _, e := range p.RouteErrors {
+			fmt.Println("  -", e)
+		}
+	}
 	for _, w := range p.NoBucket {
 		fmt.Printf(i18n.T("\n⚠ workflow %s has no target marker and default is empty; it will go into no bucket\n"), w)
 	}
@@ -143,7 +149,7 @@ func cmdPlan() int {
 		p.Placed(), renames, len(p.Conflicts), len(p.Collisions), len(p.Skipped), len(p.Ignored), len(links), staleCnt, realCnt)
 	fmt.Println(i18n.T("\nNo files were written. Run agsy apply once everything looks right."))
 
-	if len(p.Conflicts) > 0 || len(p.Collisions) > 0 {
+	if len(p.Conflicts) > 0 || len(p.Collisions) > 0 || len(p.RouteErrors) > 0 {
 		return 1
 	}
 	return 0

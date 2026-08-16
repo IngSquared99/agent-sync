@@ -7,6 +7,8 @@ package state
 import (
 	"os"
 	"path/filepath"
+	"sort"
+	"strings"
 
 	"github.com/IngSquared99/agent-sync/internal/build"
 	"github.com/IngSquared99/agent-sync/internal/config"
@@ -34,11 +36,13 @@ type NewItem struct {
 }
 
 type LocalChange struct {
-	Item     build.ManifestItem
-	OutPath  string   // the output copy where the change was detected (relative to out)
-	Multiple bool     // workflow has multiple copies and more than one was modified
-	SrcAlso  bool     // the source changed too (promote needs manual resolution)
-	Files    []string // directory items: the files that actually changed on the output side
+	Item        build.ManifestItem
+	OutPath     string   // the output copy where the change was detected (relative to out)
+	Multiple    bool     // workflow has multiple copies and more than one was modified
+	SrcAlso     bool     // the source changed too (promote needs manual resolution)
+	SrcDeleted  bool     // source file was deleted (promote recreates it; apply drops the item)
+	SrcRootGone bool     // whole source root is missing (promote refuses)
+	Files       []string // directory items: the files that actually changed on the output side
 }
 
 // GoneOut means an output copy has disappeared (deleted manually or by an
@@ -56,6 +60,9 @@ type Report struct {
 	News           []NewItem
 	Locals         []LocalChange
 	Gone           []GoneOut // missing output copies (apply can rebuild them)
+	Untracked      []string  // output files the manifest does not track (added on the mount side; apply deletes them)
+	RouteErrors    []string  // workflow routing problems (apply refuses to build)
+	ScanErr        error     // non-nil when the source scan failed and new-item detection did not run
 	Links          []mount.LinkPlan
 	LinkBad        int      // number of links that are missing or occupied by a real file
 	MissingSources []string // sources whose whole path is missing (as originally written); reported first
@@ -108,7 +115,12 @@ func Collect(cfg *config.Config, m *build.Manifest) (*Report, error) {
 	}
 	// New items: scan the current sources for paths the manifest does not know.
 	plan, err := build.Compute(cfg, sources)
-	if err == nil { // a scan failure (e.g. broken front matter) must not block status; just skip new-item detection
+	if err != nil {
+		// A scan failure must not block status, but must not be silent either:
+		// record the cause so the report can state new-item detection did not run.
+		r.ScanErr = err
+	} else {
+		r.RouteErrors = plan.RouteErrors
 		for _, it := range plan.Items {
 			// A workflow with empty route.default and no target never reaches
 			// the outputs or the manifest. Without this exemption it would be
@@ -155,10 +167,20 @@ func Collect(cfg *config.Config, m *build.Manifest) (*Report, error) {
 			// output-vs-source content comparison to exempt it (a renamed
 			// skill would never compare equal anyway).
 			lc := LocalChange{Item: it, OutPath: changed[0], Multiple: len(changed) > 1, Files: changedFiles}
-			// The source changed too → conflict; promote needs manual resolution.
+			// Concurrent source-side changes carry three distinct marks: content
+			// changed (manual merge), file deleted (promote recreates it explicitly),
+			// root missing (promote refuses).
 			for _, lag := range r.Lags {
-				if lag.Item.From == it.From && lag.Kind == SrcChanged {
+				if lag.Item.From != it.From {
+					continue
+				}
+				switch lag.Kind {
+				case SrcChanged:
 					lc.SrcAlso = true
+				case SrcDeleted:
+					lc.SrcDeleted = true
+				case SrcRootMissing:
+					lc.SrcRootGone = true
 				}
 			}
 			r.Locals = append(r.Locals, lc)
@@ -167,6 +189,38 @@ func Collect(cfg *config.Config, m *build.Manifest) (*Report, error) {
 			r.Gone = append(r.Gone, GoneOut{Item: it, OutPaths: gone})
 		}
 	}
+
+	// Untracked files: present in the output but unknown to the manifest.
+	// Without this, status reports "in sync" right before apply deletes them.
+	knownOut := map[string]bool{}
+	for _, it := range m.Items {
+		for _, rel := range it.OutPaths {
+			knownOut[rel] = true
+		}
+	}
+	_ = filepath.WalkDir(out, func(p string, d os.DirEntry, err error) error {
+		if err != nil || d.IsDir() {
+			return nil
+		}
+		rel, rerr := filepath.Rel(out, p)
+		if rerr != nil {
+			return nil
+		}
+		slash := filepath.ToSlash(rel)
+		if slash == build.ManifestName || knownOut[slash] {
+			return nil
+		}
+		for k := range knownOut {
+			// directory items (skills): files inside belong to the item and
+			// count as a local change, not as untracked
+			if strings.HasPrefix(slash, k+"/") {
+				return nil
+			}
+		}
+		r.Untracked = append(r.Untracked, slash)
+		return nil
+	})
+	sort.Strings(r.Untracked)
 
 	// Mount check
 	links, err := mount.Inspect(cfg)
@@ -180,6 +234,7 @@ func Collect(cfg *config.Config, m *build.Manifest) (*Report, error) {
 		}
 	}
 
-	r.HasGap = len(r.Lags) > 0 || len(r.News) > 0 || len(r.Locals) > 0 || len(r.Gone) > 0 || r.LinkBad > 0
+	r.HasGap = len(r.Lags) > 0 || len(r.News) > 0 || len(r.Locals) > 0 || len(r.Gone) > 0 ||
+		len(r.Untracked) > 0 || len(r.RouteErrors) > 0 || r.LinkBad > 0
 	return r, nil
 }

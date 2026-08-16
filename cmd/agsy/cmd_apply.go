@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/IngSquared99/agent-sync/internal/build"
 	"github.com/IngSquared99/agent-sync/i18n"
+	"github.com/IngSquared99/agent-sync/internal/build"
 	"github.com/IngSquared99/agent-sync/internal/mount"
 	"github.com/IngSquared99/agent-sync/internal/prompt"
 	"github.com/IngSquared99/agent-sync/internal/state"
@@ -62,44 +62,19 @@ func cmdApply() int {
 		return 1
 	}
 
-	// Confirm local changes (forced on every run, §12-3).
-	// Three cases must be kept apart:
-	//   manifest readable → compare item by item, ask only if something changed
-	//   manifest unreadable but the artifact dir still exists → whether corrupted or deleted,
-	//   there is no way to know what's inside, so always ask
-	//   artifact dir does not exist → first build, nothing can be overwritten
-	out := cfg.OutDir()
-	m, mErr := build.LoadManifest(out)
-	switch {
-	case mErr == nil:
-		rep, err := state.Collect(cfg, m)
-		if err != nil {
-			return errExit(err)
-		}
-		if len(rep.Locals) > 0 {
-			fmt.Printf(i18n.T("⚠ detected %d local changes not yet promoted; continuing apply will lose them:\n"), len(rep.Locals))
-			for _, lc := range rep.Locals {
-				fmt.Printf("  - %s/%s\n", lc.Item.Category, lc.Item.Name)
-			}
-			fmt.Println(i18n.T("  (run agsy promote first to keep the changes)"))
-			if !prompt.Confirm(i18n.T("Discard these changes and rebuild?")) {
-				fmt.Println(i18n.T("Cancelled."))
-				return 1
-			}
-		}
-	case dirExists(out):
-		fmt.Printf(i18n.T("⚠ %s/ exists but the manifest cannot be read (%v).\n"), cfg.Build.Out, mErr)
-		fmt.Println(i18n.T("  There is no way to tell whether it holds changes made by you or the AI; rebuilding will wipe it entirely."))
-		if !prompt.Confirm(i18n.T("Wipe and rebuild?")) {
-			fmt.Println(i18n.T("Cancelled."))
-			return 1
-		}
-	}
-
-	// build
+	// Compute runs before the confirmation (read-only): problems that doom
+	// the run — routing errors, name conflicts — must surface before the
+	// user agrees to discard local changes.
 	p, err := build.Compute(cfg, sources)
 	if err != nil {
 		return errExit(err)
+	}
+	if len(p.RouteErrors) > 0 {
+		fmt.Println(i18n.T("✘ workflow routing problems (front-matter target); fix these files first:"))
+		for _, e := range p.RouteErrors {
+			fmt.Println("  -", e)
+		}
+		return 1
 	}
 	if len(p.Conflicts) > 0 {
 		fmt.Println(i18n.T("✘ name conflicts (strategy error), resolve them first (agsy plan shows the full list):"))
@@ -119,6 +94,50 @@ func cmdApply() int {
 		fmt.Println(i18n.T("  Rename one of them, or switch to on_conflict: error and resolve it manually."))
 		return 1
 	}
+
+	// Confirm local changes (forced on every run, §12-3).
+	// Three cases must be kept apart:
+	//   manifest readable → compare item by item, ask only if something changed
+	//   manifest unreadable but the artifact dir still exists → whether corrupted or deleted,
+	//   there is no way to know what's inside, so always ask
+	//   artifact dir does not exist → first build, nothing can be overwritten
+	out := cfg.OutDir()
+	m, mErr := build.LoadManifest(out)
+	switch {
+	case mErr == nil:
+		rep, err := state.Collect(cfg, m)
+		if err != nil {
+			return errExit(err)
+		}
+		if len(rep.Locals) > 0 || len(rep.Untracked) > 0 {
+			if len(rep.Locals) > 0 {
+				fmt.Printf(i18n.T("⚠ detected %d local changes not yet promoted; continuing apply will lose them:\n"), len(rep.Locals))
+				for _, lc := range rep.Locals {
+					fmt.Printf("  - %s/%s\n", lc.Item.Category, lc.Item.Name)
+				}
+				fmt.Println(i18n.T("  (run agsy promote first to keep the changes)"))
+			}
+			if len(rep.Untracked) > 0 {
+				fmt.Printf(i18n.T("⚠ %d untracked files were added on the mount side; rebuilding deletes them:\n"), len(rep.Untracked))
+				for _, u := range rep.Untracked {
+					fmt.Println("  -", u)
+				}
+				fmt.Println(i18n.T("  (to keep one, move it into a source directory first; promote has no origin to write it back to)"))
+			}
+			if !prompt.Confirm(i18n.T("Discard these changes and rebuild?")) {
+				fmt.Println(i18n.T("Cancelled."))
+				return 1
+			}
+		}
+	case dirExists(out):
+		fmt.Printf(i18n.T("⚠ %s/ exists but the manifest cannot be read (%v).\n"), cfg.Build.Out, mErr)
+		fmt.Println(i18n.T("  There is no way to tell whether it holds changes made by you or the AI; rebuilding will wipe it entirely."))
+		if !prompt.Confirm(i18n.T("Wipe and rebuild?")) {
+			fmt.Println(i18n.T("Cancelled."))
+			return 1
+		}
+	}
+
 	for _, w := range p.NoBucket {
 		fmt.Printf(i18n.T("⚠ workflow %s has no target marker and default is empty; it goes into no bucket\n"), w)
 	}

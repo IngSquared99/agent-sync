@@ -6,9 +6,9 @@ import (
 	"path/filepath"
 	"sort"
 
+	"github.com/IngSquared99/agent-sync/i18n"
 	"github.com/IngSquared99/agent-sync/internal/build"
 	"github.com/IngSquared99/agent-sync/internal/config"
-	"github.com/IngSquared99/agent-sync/i18n"
 	"github.com/IngSquared99/agent-sync/internal/prompt"
 	"github.com/IngSquared99/agent-sync/internal/state"
 )
@@ -137,7 +137,13 @@ func promoteAll(cfg *config.Config, out string, m *build.Manifest, locals []stat
 		}
 		fmt.Printf(i18n.T("  → %s (%d items)%s\n"), k, len(groups[k]), warn)
 		for _, lc := range groups[k] {
-			fmt.Printf("      %s/%s\n", lc.Item.Category, lc.Item.Name)
+			mark := ""
+			if lc.SrcRootGone {
+				mark = i18n.T("   ⚠ source root missing; will be skipped")
+			} else if lc.SrcDeleted {
+				mark = i18n.T("   ⚠ source file deleted; will be recreated")
+			}
+			fmt.Printf("      %s/%s%s\n", lc.Item.Category, lc.Item.Name, mark)
 		}
 	}
 	if !prompt.Confirm(i18n.T("\nWrite back all of them?")) {
@@ -161,7 +167,11 @@ func promoteAll(cfg *config.Config, out string, m *build.Manifest, locals []stat
 			fmt.Printf(i18n.T("  %s\n  → alternatively use: agsy promote %s --to <writable source>\n"), f, f)
 		}
 	}
-	fmt.Printf(i18n.T("The remaining %d items were written back.\n"), okCnt)
+	if len(failed) > 0 {
+		fmt.Printf(i18n.T("The remaining %d items were written back.\n"), okCnt)
+	} else {
+		fmt.Printf(i18n.T("All %d items were written back.\n"), okCnt)
+	}
 	if okCnt > 0 {
 		fmt.Println(i18n.T("Reminder: sources have changed; run agsy apply to rebuild the outputs."))
 	}
@@ -211,6 +221,20 @@ func promoteOne(cfg *config.Config, out string, m *build.Manifest, lc state.Loca
 	if lc.Multiple {
 		fmt.Printf(i18n.T("✘ %s/%s has multiple bucket copies changed to different contents; compare and resolve manually\n"), it.Category, it.Name)
 		return 1
+	}
+	if lc.SrcRootGone {
+		fmt.Printf(i18n.T("✘ the source root of %s/%s is missing (repo not cloned? disk not mounted?); fix the source path before writing back\n"), it.Category, it.Name)
+		return 1
+	}
+	if lc.SrcDeleted && toRaw == "" {
+		// The source file no longer exists, so recreating it must be stated
+		// explicitly (status warns the item disappears on apply; promote must
+		// not recreate it silently).
+		fmt.Printf(i18n.T("⚠ the source file of %s/%s was deleted; writing back will recreate %s\n"), it.Category, it.Name, it.From)
+		if confirm && !prompt.Confirm(i18n.T("Recreate it?")) {
+			fmt.Println(i18n.T("  Skipped."))
+			return 1
+		}
 	}
 	if lc.SrcAlso && toRaw == "" {
 		fmt.Printf(i18n.T("✘ the source of %s/%s has changed too (both sides modified); overwriting would clobber the source's new content, compare manually\n"), it.Category, it.Name)

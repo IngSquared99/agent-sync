@@ -6,8 +6,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/IngSquared99/agent-sync/internal/config"
 	"github.com/IngSquared99/agent-sync/i18n"
+	"github.com/IngSquared99/agent-sync/internal/config"
 )
 
 // ── Miniature project for tests ─────────────────────────────────────
@@ -257,11 +257,16 @@ func TestRouteWorkflows(t *testing.T) {
 }
 
 func TestRouteUnknownBucketFails(t *testing.T) {
+	// A bad bucket no longer aborts Compute (that would hide the rest of the
+	// plan); it is collected into RouteErrors and Execute refuses to build.
 	cfg, lib, _ := setupTwoSources(t, "rename", "error")
 	writeFile(t, filepath.Join(lib, "workflow", "bad.md"), "---\ntarget: [nosuch]\n---\nx\n")
-	sources, _ := ExpandSources(cfg)
-	if _, err := Compute(cfg, sources); err == nil {
-		t.Error("a nonexistent bucket must fail; the file must not silently disappear")
+	p := compute(t, cfg)
+	if len(p.RouteErrors) != 1 || !strings.Contains(p.RouteErrors[0], "nosuch") {
+		t.Errorf("RouteErrors = %v, want the unknown bucket collected", p.RouteErrors)
+	}
+	if _, err := Execute(cfg, p); err == nil {
+		t.Error("Execute must refuse while route errors exist")
 	}
 }
 
