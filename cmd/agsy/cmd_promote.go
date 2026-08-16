@@ -173,7 +173,7 @@ func promoteAll(cfg *config.Config, out string, m *build.Manifest, locals []stat
 		fmt.Printf(i18n.T("All %d items were written back.\n"), okCnt)
 	}
 	if okCnt > 0 {
-		fmt.Println(i18n.T("Reminder: sources have changed; run agsy apply to rebuild the outputs."))
+		fmt.Println(i18n.T("Write-back complete; sources and outputs are consistent again."))
 	}
 	if len(failed) > 0 {
 		return 1
@@ -187,6 +187,11 @@ func promoteInteractive(cfg *config.Config, out string, m *build.Manifest, local
 		labels = append(labels, fmt.Sprintf(i18n.T("%s/%s   original source: %s"), lc.Item.Category, lc.Item.Name, lc.Item.From))
 	}
 	picked := prompt.MultiSelect(fmt.Sprintf(i18n.T("Detected %d local changes; select the items to write back"), len(locals)), labels, nil)
+	// An empty pick only happens on the non-interactive cancel path
+	// (interactive input insists on at least one selection).
+	if len(picked) == 0 {
+		return 1
+	}
 	okCnt := 0
 	for _, i := range picked {
 		lc := locals[i]
@@ -305,7 +310,11 @@ func promoteOne(cfg *config.Config, out string, m *build.Manifest, lc state.Loca
 		fmt.Printf(i18n.T("  ⚠ the old source still holds this item: %s\n"), it.From)
 		fmt.Println(i18n.T("     The next build will pick up both old and new copies (same name); once the new source is verified, remove the old one manually."))
 	}
-	markPromoted(out, m, it, lc.OutPath)
+	srcPath := ""
+	if toRaw == "" {
+		srcPath = dest // written back to its origin; refresh the source baseline
+	}
+	markPromoted(out, m, it, lc.OutPath, srcPath)
 	return 0
 }
 
@@ -315,7 +324,7 @@ func promoteOne(cfg *config.Config, out string, m *build.Manifest, lc state.Loca
 // status would then keep reporting the same local change forever, and next round
 // it escalates to "the source has changed too", which makes promote refuse
 // outright — the user would be stuck there.
-func markPromoted(out string, m *build.Manifest, it build.ManifestItem, changedRel string) {
+func markPromoted(out string, m *build.Manifest, it build.ManifestItem, changedRel, srcPath string) {
 	for i := range m.Items {
 		if m.Items[i].Category != it.Category || m.Items[i].Name != it.Name {
 			continue
@@ -338,6 +347,17 @@ func markPromoted(out string, m *build.Manifest, it build.ManifestItem, changedR
 		p := filepath.Join(out, filepath.FromSlash(m.Items[i].OutPaths[0]))
 		if h, files, err := build.HashPath(p); err == nil {
 			m.Items[i].Hash, m.Items[i].Files = h, files
+		}
+		// The write-back just made the source identical to the accepted
+		// content, so refresh the source baseline as well. Leaving the old
+		// SrcHash would misflag the very next edit of this item as "the
+		// source changed too" — a promote-refusing deadlock caused by
+		// promote's own write. (srcPath is empty for --to redirects: the
+		// original source was not touched there.)
+		if srcPath != "" {
+			if sh, sfiles, err := build.HashPath(srcPath); err == nil {
+				m.Items[i].SrcHash, m.Items[i].SrcFiles = sh, sfiles
+			}
 		}
 		return
 	}

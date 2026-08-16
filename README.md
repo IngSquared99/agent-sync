@@ -67,7 +67,7 @@ Day to day, there are only three moves:
 | Situation | Command |
 |---|---|
 | I edited a source | `agsy apply` |
-| An AI tool edited a mounted file | `agsy promote` to write it back, then `agsy apply` |
+| An AI tool edited a mounted file | `agsy promote` to write it back (sources and outputs are consistent right after) |
 | Not sure what state things are in | `agsy status` |
 
 ---

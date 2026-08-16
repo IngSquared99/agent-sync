@@ -87,7 +87,7 @@ cat .claude/rules/python-style.md
 
 ```
 改了來源？           → agsy apply
-AI 改了掛載端檔案？   → agsy promote 寫回，再 agsy apply
+AI 改了掛載端檔案？   → agsy promote 寫回（完成後即一致）
 狀態不明？           → agsy status
 ```
 

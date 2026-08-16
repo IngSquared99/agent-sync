@@ -236,6 +236,10 @@ func (c *Config) validateOut() []string {
 		}
 		if out == abs || IsAncestor(out, abs) {
 			errs = append(errs, fmt.Sprintf(i18n.T("build.out (%s) contains source %s, apply would delete the source (sources must live outside the output)"), out, s))
+		} else if IsAncestor(abs, out) {
+			// The other direction matters just as much: an output nested inside
+			// a source gets wiped by apply together with the originals around it.
+			errs = append(errs, fmt.Sprintf(i18n.T("build.out (%s) lies inside source %s; apply would wipe that part of the source"), out, s))
 		}
 	}
 	return errs

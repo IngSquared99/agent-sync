@@ -624,6 +624,9 @@ func RemoveOut(cfg *config.Config) error {
 		if out == root || config.IsAncestor(out, root) {
 			return fmt.Errorf(i18n.T("refusing to delete %q: it contains source %q"), out, root)
 		}
+		if config.IsAncestor(root, out) {
+			return fmt.Errorf(i18n.T("refusing to delete %q: it lies inside source %q"), out, root)
+		}
 	}
 	return os.RemoveAll(out)
 }

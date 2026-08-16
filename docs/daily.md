@@ -52,8 +52,10 @@ status 把落差拆成兩個方向加一個健康檢查：
 
    ```bash
    agsy promote skills/api-doc
-   agsy apply
    ```
+
+   回寫完成後，該項目的來源與產物立即一致，不需要再跑 apply
+   （status 也會直接回到全綠；有其他落差時才需要 apply）。
 
 4. 不想留？什麼都不用做，下次 `agsy apply` 重建時自然消失。
 

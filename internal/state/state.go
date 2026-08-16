@@ -137,6 +137,7 @@ func Collect(cfg *config.Config, m *build.Manifest) (*Report, error) {
 	// Direction two: output → source (needs promote)
 	for _, it := range m.Items {
 		var changed []string
+		var changedHashes []string
 		var changedFiles []string
 		var gone []string
 		for _, rel := range it.OutPaths {
@@ -155,6 +156,7 @@ func Collect(cfg *config.Config, m *build.Manifest) (*Report, error) {
 			}
 			if h != it.Hash {
 				changed = append(changed, rel)
+				changedHashes = append(changedHashes, h)
 				if len(changedFiles) == 0 {
 					changedFiles = build.DiffFiles(it.Files, files)
 				}
@@ -166,7 +168,15 @@ func Collect(cfg *config.Config, m *build.Manifest) (*Report, error) {
 			// here as a local change. There is no need for an extra
 			// output-vs-source content comparison to exempt it (a renamed
 			// skill would never compare equal anyway).
-			lc := LocalChange{Item: it, OutPath: changed[0], Multiple: len(changed) > 1, Files: changedFiles}
+			// Multiple means the copies diverged from EACH OTHER, not merely that
+			// more than one copy changed: identical edits across buckets are one
+			// change (write-back syncs every copy anyway). Only genuinely
+			// different contents need a human to pick a winner.
+			distinct := map[string]bool{}
+			for _, ch := range changedHashes {
+				distinct[ch] = true
+			}
+			lc := LocalChange{Item: it, OutPath: changed[0], Multiple: len(distinct) > 1, Files: changedFiles}
 			// Concurrent source-side changes carry three distinct marks: content
 			// changed (manual merge), file deleted (promote recreates it explicitly),
 			// root missing (promote refuses).
@@ -200,6 +210,12 @@ func Collect(cfg *config.Config, m *build.Manifest) (*Report, error) {
 	}
 	_ = filepath.WalkDir(out, func(p string, d os.DirEntry, err error) error {
 		if err != nil || d.IsDir() {
+			return nil
+		}
+		// Hidden files (.DS_Store and friends) are never build outputs and are
+		// never collected from sources (Accepts skips the same dot prefix);
+		// reporting them as untracked would nag macOS users on every status.
+		if strings.HasPrefix(d.Name(), ".") {
 			return nil
 		}
 		rel, rerr := filepath.Rel(out, p)

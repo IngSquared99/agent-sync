@@ -116,13 +116,28 @@ func MultiSelect(msg string, options []string, preselected []int) []int {
 		}
 		fmt.Printf("    %s %d) %s\n", flag, i+1, o)
 	}
-	if !IsStdinTTY() && !AssumeYes {
-		// Nobody can answer: keep the status quo (when preselected) or select all
-		// (first-time setup); never spin waiting for input.
+	if AssumeYes || !IsStdinTTY() {
+		// Nobody can answer (or --yes already answered): never spin on input.
 		if len(preselected) > 0 {
 			fmt.Println(i18n.T("  (non-interactive; keeping current selection)"))
 			return append([]int{}, preselected...)
 		}
+		if AssumeYes {
+			// --yes on a selection question accepts the default (= all),
+			// consistent with Select taking its default value.
+			fmt.Println(i18n.T("  (--yes given; selecting all)"))
+			all := make([]int, len(options))
+			for i := range options {
+				all[i] = i
+			}
+			return all
+		}
+		// Non-interactive without --yes and nothing preselected: cancel.
+		// Falling through would read EOF as an empty line and select ALL —
+		// the promote menu would then silently write sources back, breaking
+		// the "needs confirmation → cancelled, never forced" promise.
+		fmt.Println(i18n.T("  ✘ Non-interactive and --yes not given; treating as cancelled."))
+		return nil
 	}
 	for {
 		fmt.Print(i18n.T("Enter your choice: "))

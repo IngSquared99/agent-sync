@@ -67,7 +67,7 @@ $ agsy
 | 情況 | 指令 |
 |---|---|
 | 我改了來源 | `agsy apply` |
-| AI 幫我改了掛載中的檔案 | `agsy promote` 回寫,再 `agsy apply` |
+| AI 幫我改了掛載中的檔案 | `agsy promote` 回寫(完成後來源與產物即一致) |
 | 不確定現在什麼狀態 | `agsy status` |
 
 ---
