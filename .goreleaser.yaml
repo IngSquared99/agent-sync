@@ -56,3 +56,25 @@ changelog:
       - "^docs:"
       - "^test:"
       - "^chore:"
+
+# Homebrew tap:發版時自動更新 IngSquared99/homebrew-tap 裡的 cask,
+# 使用者即可 brew install IngSquared99/tap/agsy。
+# 前置需求(一次性):建立 public repo「homebrew-tap」,並在本 repo 的
+# Settings → Secrets and variables → Actions 加入 HOMEBREW_TAP_GITHUB_TOKEN
+# (一把對 homebrew-tap 有寫入權的 Personal Access Token)。
+homebrew_casks:
+  - name: agsy
+    repository:
+      owner: IngSquared99
+      name: homebrew-tap
+      token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
+    homepage: https://github.com/IngSquared99/agent-sync
+    description: "Sync AI rules to every tool"
+    # 未付費簽章的 binary:安裝時自動移除 macOS 隔離標記(官方建議作法),
+    # 使用者就不會遇到「無法驗證開發者」的攔截。
+    hooks:
+      post:
+        install: |
+          if OS.mac?
+            system_command "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "#{staged_path}/agsy"]
+          end

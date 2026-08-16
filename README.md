@@ -274,7 +274,36 @@ First check that `.claude/` (etc.) isn't a real directory you created by hand. a
 
 ### One-line install (recommended)
 
-Open a terminal and paste the line for your machine:
+**Mac / Linux**
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/IngSquared99/agent-sync/main/install.sh | sh
+```
+
+**Windows (PowerShell)**
+
+```powershell
+irm https://raw.githubusercontent.com/IngSquared99/agent-sync/main/install.ps1 | iex
+```
+
+The script detects your platform, downloads the matching build from [Releases](https://github.com/IngSquared99/agent-sync/releases), and puts `agsy` on your PATH — it is a few dozen readable lines, feel free to inspect it first: [install.sh](install.sh) / [install.ps1](install.ps1).
+
+### Homebrew (Mac)
+
+```bash
+brew install IngSquared99/tap/agsy
+```
+
+### Go (developers)
+
+```bash
+go install github.com/IngSquared99/agent-sync/cmd/agsy@latest
+```
+
+Run `agsy version` to confirm the install.
+
+<details>
+<summary>Manual download (no script)</summary>
 
 ```bash
 # Mac (Apple silicon, M-series)
@@ -293,7 +322,9 @@ iwr https://github.com/IngSquared99/agent-sync/releases/latest/download/agsy_win
 # Open a new terminal window afterwards so PATH takes effect; on Arm laptops replace x64 with arm64
 ```
 
-Run `agsy version` to confirm. Mac / Linux will ask for your password once (moving into /usr/local/bin requires it); command-line downloads don't get macOS's quarantine flag, so the "cannot verify the developer" warning never appears.
+Mac / Linux will ask for your password once (moving into /usr/local/bin requires it); command-line downloads don't get macOS's quarantine flag, so the "cannot verify the developer" warning never appears.
+
+</details>
 
 ### Build from source (developers)
 
@@ -304,10 +335,4 @@ git clone https://github.com/IngSquared99/agent-sync.git
 cd agent-sync
 go build -o agsy ./cmd/agsy    # Windows: go build -o agsy.exe ./cmd/agsy
 go test ./...             # zero external dependencies — no go mod download needed
-```
-
-Or install directly with Go:
-
-```
-go install github.com/IngSquared99/agent-sync/cmd/agsy@latest
 ```

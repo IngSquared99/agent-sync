@@ -274,7 +274,36 @@ build 時每個檔案都記入 manifest(sha256 指紋 + 來源血緣),所以 `ag
 
 ### 一行指令安裝(推薦)
 
-打開終端機,貼上對應你機器的那一行:
+**Mac / Linux**
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/IngSquared99/agent-sync/main/install.sh | sh
+```
+
+**Windows(PowerShell)**
+
+```powershell
+irm https://raw.githubusercontent.com/IngSquared99/agent-sync/main/install.ps1 | iex
+```
+
+腳本會偵測你的平台、從 [Releases](https://github.com/IngSquared99/agent-sync/releases) 下載對應版本、放進 PATH——內容就幾十行,不放心可以先點開看:[install.sh](install.sh) / [install.ps1](install.ps1)。
+
+### Homebrew(Mac)
+
+```bash
+brew install IngSquared99/tap/agsy
+```
+
+### Go(開發者)
+
+```bash
+go install github.com/IngSquared99/agent-sync/cmd/agsy@latest
+```
+
+裝完打 `agsy version` 確認。
+
+<details>
+<summary>手動下載(不跑腳本)</summary>
 
 ```bash
 # Mac(Apple 晶片,M 系列)
@@ -293,7 +322,9 @@ iwr https://github.com/IngSquared99/agent-sync/releases/latest/download/agsy_win
 # 貼完重開一個終端機視窗讓 PATH 生效;Arm 筆電把 x64 換成 arm64
 ```
 
-裝完打 `agsy version` 確認。Mac / Linux 會要求輸入一次電腦密碼(放進 /usr/local/bin 需要);用指令下載不會被 macOS 標上隔離標記,不會出現「無法驗證開發者」的警告視窗。
+Mac / Linux 會要求輸入一次電腦密碼(放進 /usr/local/bin 需要);用指令下載不會被 macOS 標上隔離標記,不會出現「無法驗證開發者」的警告視窗。
+
+</details>
 
 ### 從原始碼建置(開發者)
 
@@ -304,10 +335,4 @@ git clone https://github.com/IngSquared99/agent-sync.git
 cd agent-sync
 go build -o agsy ./cmd/agsy    # Windows: go build -o agsy.exe ./cmd/agsy
 go test ./...             # 零外部相依,不必先 go mod download
-```
-
-或直接用 Go 安裝:
-
-```
-go install github.com/IngSquared99/agent-sync/cmd/agsy@latest
 ```
