@@ -231,6 +231,7 @@ Every file is recorded in a manifest at build time (sha256 fingerprint + source 
 - **The tool never deletes anything it didn't create** — links are agsy's own, freely rebuilt; your real directories and files trigger an error and are never removed on your behalf
 - `build.out` is guarded: pointing it outside the project, at your home directory, or at a source path is rejected at config-validation time
 - `apply` always checks for un-promoted edits first — nothing is silently overwritten
+- `promote` only writes inside the sources configured in `agsy.yaml` (the manifest lives in the mounted layer and is never blindly trusted), and symbolic links in sources are never collected
 - `plan` never writes anything — look before you leap
 
 ### Download and run

@@ -120,6 +120,13 @@ func Accepts(cat, path string, isDir bool) (bool, string) {
 	if strings.HasPrefix(name, ".") {
 		return false, i18n.T("starts with .")
 	}
+	// Symbolic links are never collected: build copies file *contents*, so a
+	// link inside a (possibly shared) source could smuggle arbitrary files from
+	// outside it — e.g. a "rule" pointing at a private key — straight into the
+	// mounted output. Lstat inspects the entry itself instead of following it.
+	if fi, err := os.Lstat(path); err == nil && fi.Mode()&os.ModeSymlink != 0 {
+		return false, i18n.T("symbolic links are not collected")
+	}
 	if cat == "skills" {
 		if !isDir {
 			return false, i18n.T("skills are directories; a single file is not accepted")
@@ -129,6 +136,11 @@ func Accepts(cat, path string, isDir bool) (bool, string) {
 		// the mount side — no description, never triggered.
 		if st, err := os.Stat(filepath.Join(path, "SKILL.md")); err != nil || st.IsDir() {
 			return false, i18n.T("skill directory has no SKILL.md")
+		}
+		// The directory itself is real, but any entry inside could still be a
+		// link; reject the whole skill so nothing smuggled reaches the output.
+		if rel, found := firstSymlinkWithin(path); found {
+			return false, fmt.Sprintf(i18n.T("contains a symbolic link (%s); the skill is not collected"), rel)
 		}
 		return true, ""
 	}
@@ -725,10 +737,33 @@ func copyFile(src, dst string) error {
 	return os.Chmod(dst, perm)
 }
 
+// firstSymlinkWithin walks dir and returns the first symbolic link found, as a
+// path relative to dir. WalkDir does not follow links, so the walk is safe.
+func firstSymlinkWithin(dir string) (string, bool) {
+	found := ""
+	_ = filepath.WalkDir(dir, func(p string, d os.DirEntry, err error) error {
+		if err != nil {
+			return nil
+		}
+		if d.Type()&os.ModeSymlink != 0 {
+			rel, _ := filepath.Rel(dir, p)
+			found = filepath.ToSlash(rel)
+			return filepath.SkipAll
+		}
+		return nil
+	})
+	return found, found != ""
+}
+
 func copyDir(src, dst string) error {
 	return filepath.WalkDir(src, func(p string, d os.DirEntry, err error) error {
 		if err != nil {
 			return err
+		}
+		// Second line of defense (Accepts already rejects sources containing
+		// links): never copy a symbolic link's target content.
+		if d.Type()&os.ModeSymlink != 0 {
+			return fmt.Errorf(i18n.T("refusing to copy symbolic link %s"), p)
 		}
 		rel, _ := filepath.Rel(src, p)
 		target := filepath.Join(dst, rel)

@@ -224,8 +224,33 @@ func promoteOne(cfg *config.Config, out string, m *build.Manifest, lc state.Loca
 			fmt.Println("✘", err)
 			return 1
 		}
+		// --to may only point at a source configured in agsy.yaml: content
+		// written anywhere else silently leaves agsy's management (the next
+		// build would not pick it up), and an unrestricted redirect would
+		// defeat the destination guard below.
+		isSource := false
+		for _, root := range cfg.SourceRoots() {
+			if root == abs {
+				isSource = true
+				break
+			}
+		}
+		if !isSource {
+			fmt.Printf(i18n.T("✘ --to %s is not a source configured in %s; refusing to write outside the configured sources\n"), toRaw, config.FileName)
+			return 1
+		}
 		from := cfg.Build.Categories[it.Category].From
 		dest = filepath.Join(abs, from, it.Original)
+	}
+	// Destination guard: dest otherwise comes from the manifest, which lives in
+	// the build output — the one layer mounted AI tools can write to. A
+	// tampered manifest could redirect promote at an arbitrary path, and
+	// writeBack would overwrite whatever is there (directories are removed
+	// first). agsy.yaml is user-owned and outside the output, so its sources
+	// are the trust anchor: refuse destinations outside every configured source.
+	if _, ok := cfg.SourceRootOf(dest); !ok {
+		fmt.Printf(i18n.T("✘ refusing to write back %s/%s: destination %s is not inside any source configured in %s (a tampered or stale manifest could otherwise redirect the write; if you changed sources recently, run agsy apply first)\n"), it.Category, it.Name, dest, config.FileName)
+		return 1
 	}
 	if confirm && outsideProject(cfg, dest) {
 		fmt.Printf(i18n.T("⚠ %s is outside the project (a shared library); writing back affects every project that uses it\n"), dest)
