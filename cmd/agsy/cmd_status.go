@@ -146,14 +146,21 @@ func cmdStatus(withMenu bool) int {
 		}
 	}
 	flush()
+	for _, o := range rep.Orphans {
+		fmt.Printf(i18n.T("%s → ⚠ created by an earlier apply but no longer referenced by the mount config; delete it manually or run agsy clean\n"), o)
+	}
 
 	fmt.Println(i18n.T("\n═══ summary ═══"))
 	fmt.Printf(i18n.T("behind %d │ new %d │ local changes %d │ untracked %d │ missing artifacts %d │ mount anomalies %d\n"),
 		len(rep.Lags), len(rep.News), len(rep.Locals), len(rep.Untracked), len(rep.Gone), rep.LinkBad)
 	if len(rep.Locals) > 0 {
 		fmt.Println(i18n.T("suggestion: run agsy promote first to keep the changes, then agsy apply to rebuild"))
-	} else if len(rep.Lags) > 0 || len(rep.News) > 0 || len(rep.Gone) > 0 || rep.LinkBad > 0 {
+	} else if len(rep.Lags) > 0 || len(rep.News) > 0 || len(rep.Gone) > 0 || rep.LinkBad > len(rep.Orphans) {
 		fmt.Println(i18n.T("suggestion: run agsy apply to rebuild"))
+	}
+	if len(rep.Orphans) > 0 {
+		// apply never removes links, so "rebuild" is not the remedy here.
+		fmt.Println(i18n.T("suggestion: orphaned links are not removed by apply — delete them manually or run agsy clean"))
 	}
 	if len(rep.Untracked) > 0 {
 		fmt.Println(i18n.T("suggestion: move untracked files into a source first (apply deletes them), then rebuild"))

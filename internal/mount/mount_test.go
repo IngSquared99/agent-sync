@@ -6,8 +6,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/IngSquared99/agent-sync/internal/config"
 	"github.com/IngSquared99/agent-sync/i18n"
+	"github.com/IngSquared99/agent-sync/internal/config"
 )
 
 const mountYAML = `version: 1

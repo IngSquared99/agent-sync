@@ -7,8 +7,8 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/IngSquared99/agent-sync/internal/config"
 	"github.com/IngSquared99/agent-sync/i18n"
+	"github.com/IngSquared99/agent-sync/internal/config"
 	"github.com/IngSquared99/agent-sync/internal/prompt"
 )
 
@@ -164,6 +164,13 @@ func cmdInit(argSources []string) int {
 	for _, i := range picked {
 		bucketSet[adapters[i].Bucket] = true
 	}
+	// Hand-edited buckets are carried over (union): dropping one would turn
+	// every workflow targeting it into a route error after regeneration.
+	if cur != nil {
+		for _, b := range cur.Build.Route.Buckets {
+			bucketSet[b] = true
+		}
+	}
 	for _, m := range customMounts {
 		for _, sub := range m.Links {
 			parts := strings.Split(strings.Trim(filepath.ToSlash(sub), "/"), "/")
@@ -179,19 +186,50 @@ func cmdInit(argSources []string) int {
 	sort.Strings(buckets)
 
 	defIdx := 0
-	if cur != nil && len(cur.Build.Route.Default) == 0 {
-		defIdx = 1
+	partialDefault := false
+	if cur != nil {
+		if len(cur.Build.Route.Default) == 0 {
+			defIdx = 1
+		} else if len(cur.Build.Route.Default) != len(buckets) {
+			// A hand-edited partial default is not expressible by the two
+			// standard answers; offer to keep it verbatim (same carry-over
+			// policy as custom mounts).
+			partialDefault = true
+		}
 	}
-	di := prompt.Select(i18n.T("\nWhere should workflows without a target go?"), []string{
+	defOpts := []string{
 		i18n.T("All buckets (recommended: a file showing up everywhere is easier to understand than one that mysteriously disappears)"),
 		i18n.T("Nowhere, and warn during plan / apply"),
-	}, defIdx)
+	}
+	if partialDefault {
+		defOpts = append([]string{fmt.Sprintf(i18n.T("Keep current value (%v)"), cur.Build.Route.Default)}, defOpts...)
+		defIdx = 0
+	}
+	di := prompt.Select(i18n.T("\nWhere should workflows without a target go?"), defOpts, defIdx)
 	var routeDefault []string
-	if di == 0 {
+	switch {
+	case partialDefault && di == 0:
+		for _, d := range cur.Build.Route.Default {
+			if containsStr(buckets, d) {
+				routeDefault = append(routeDefault, d)
+			}
+		}
+	case (partialDefault && di == 1) || (!partialDefault && di == 0):
 		routeDefault = buckets
 	}
 
-	newRaw := renderConfig(sources, out, strategies, buckets, routeDefault, adapters, picked, customMounts)
+	// categories and route.field have no questionnaire of their own; carry the
+	// current values over verbatim (same policy as custom mounts) instead of
+	// resetting hand-edited files to template defaults.
+	var keepCategories map[string]config.Category
+	routeField := "target"
+	if cur != nil {
+		keepCategories = cur.Build.Categories
+		if cur.Build.Route.Field != "" {
+			routeField = cur.Build.Route.Field
+		}
+	}
+	newRaw := renderConfig(sources, out, strategies, buckets, routeDefault, adapters, picked, customMounts, keepCategories, routeField)
 
 	// ── Edit mode: show diff before writing ──
 	if exists {
@@ -248,7 +286,8 @@ func askSources() []string {
 
 // renderConfig assembles the commented agsy.yaml content
 func renderConfig(sources []string, out string, strategies map[string]string,
-	buckets, routeDefault []string, adapters []Adapter, picked []int, customMounts []config.MountCfg) string {
+	buckets, routeDefault []string, adapters []Adapter, picked []int, customMounts []config.MountCfg,
+	categories map[string]config.Category, routeField string) string {
 	var b strings.Builder
 	b.WriteString(i18n.T("# agsy config file (agent-sync)\n"))
 	b.WriteString(i18n.T("# Path syntax: ~ prefix = home expansion; relative paths = resolved from this file's directory; absolute paths = as is\n"))
@@ -259,15 +298,27 @@ func renderConfig(sources []string, out string, strategies map[string]string,
 	b.WriteString("\nbuild:\n")
 	b.WriteString("  out: " + out + i18n.T("                   # must be inside the project directory (apply wipes it entirely)\n\n"))
 	b.WriteString(i18n.T("  categories:                 # source subdir → output subdir (the three to values must all differ)\n"))
-	b.WriteString("    rules:     { from: rule,     to: rules }\n")
-	b.WriteString("    skills:    { from: skill,    to: skills }\n")
-	b.WriteString("    workflows: { from: workflow, to: workflows }\n\n")
+	cats := map[string]config.Category{
+		"rules":     {From: "rule", To: "rules"},
+		"skills":    {From: "skill", To: "skills"},
+		"workflows": {From: "workflow", To: "workflows"},
+	}
+	if categories != nil {
+		cats = categories // loaded configs are already default-filled
+	}
+	for _, cat := range config.CategoryOrder {
+		b.WriteString(fmt.Sprintf("    %-10s { from: %s, to: %s }\n", cat+":", cats[cat].From, cats[cat].To))
+	}
+	b.WriteString("\n")
 	b.WriteString(i18n.T("  on_conflict:                # same-name handling: first / rename / error (required per category)\n"))
 	b.WriteString("    rules:     " + strategies["rules"] + "\n")
 	b.WriteString("    skills:    " + strategies["skills"] + "\n")
 	b.WriteString("    workflows: " + strategies["workflows"] + "\n\n")
 	b.WriteString(i18n.T("  route:                      # workflow routing\n"))
-	b.WriteString(i18n.T("    field: target             # which front-matter field to read (agsy custom field)\n"))
+	if routeField == "" {
+		routeField = "target"
+	}
+	b.WriteString(fmt.Sprintf("    field: %-19s", routeField) + i18n.T("# which front-matter field to read (agsy custom field)\n"))
 	b.WriteString("    default: [" + strings.Join(routeDefault, ", ") + "]\n")
 	b.WriteString("    buckets: [" + strings.Join(buckets, ", ") + "]\n\n")
 	b.WriteString("mount:\n")
@@ -401,4 +452,13 @@ func offerGitignore(wd, out string) {
 		return
 	}
 	fmt.Printf(i18n.T("  ✔ Added %s to .gitignore\n"), entry)
+}
+
+func containsStr(list []string, v string) bool {
+	for _, x := range list {
+		if x == v {
+			return true
+		}
+	}
+	return false
 }

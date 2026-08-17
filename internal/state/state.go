@@ -64,7 +64,8 @@ type Report struct {
 	RouteErrors    []string  // workflow routing problems (apply refuses to build)
 	ScanErr        error     // non-nil when the source scan failed and new-item detection did not run
 	Links          []mount.LinkPlan
-	LinkBad        int      // number of links that are missing or occupied by a real file
+	Orphans        []string // links created by an earlier apply that the current mount config no longer references
+	LinkBad        int      // number of links that are missing, occupied, or orphaned
 	MissingSources []string // sources whose whole path is missing (as originally written); reported first
 	HasGap         bool
 }
@@ -249,6 +250,25 @@ func Collect(cfg *config.Config, m *build.Manifest) (*Report, error) {
 			r.LinkBad++
 		}
 	}
+	// Orphaned links: recorded by an earlier apply but absent from the current
+	// mount config. A tool still reading one gets stale (or broken) content
+	// while everything else looks green, so they count as mount anomalies.
+	// Only paths that verifiably ARE links into the output are reported — the
+	// manifest is untrusted.
+	current := map[string]bool{}
+	for _, l := range links {
+		current[l.LinkPath] = true
+	}
+	for _, lp := range m.Mounts {
+		if current[lp] {
+			continue
+		}
+		if mount.IsManagedLink(lp, out) {
+			r.Orphans = append(r.Orphans, lp)
+		}
+	}
+	sort.Strings(r.Orphans)
+	r.LinkBad += len(r.Orphans)
 
 	r.HasGap = len(r.Lags) > 0 || len(r.News) > 0 || len(r.Locals) > 0 || len(r.Gone) > 0 ||
 		len(r.Untracked) > 0 || len(r.RouteErrors) > 0 || r.LinkBad > 0

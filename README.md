@@ -169,8 +169,8 @@ The usual approach allows one source directory, or at best a global/project "fal
 
 ```
   ~/all-all-ai-lib/rule/python-style.md ──┐               rename strategy (keep both, tag origins)
-                                  ├── collision! ──→  python-style@all-ai-lib.md
-  ./repo-all-ai-lib/rule/python-style.md ───┘                   python-style@repo-ai-lib.md
+                                  ├── collision! ──→  python-style-fromlib-all-ai-lib.md
+  ./repo-all-ai-lib/rule/python-style.md ───┘                   python-style-fromlib-repo-ai-lib.md
 
                                                   first: keep only the higher-priority copy
                                                   error: stop and list the conflicts for you

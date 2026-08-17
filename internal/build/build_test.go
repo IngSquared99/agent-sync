@@ -158,10 +158,12 @@ func TestAssignTagsUnique(t *testing.T) {
 }
 
 func TestTagged(t *testing.T) {
-	if got := tagged("python-style.md", "lib", false); got != "python-style@lib.md" {
+	if got := tagged("python-style.md", "lib", false); got != "python-style-fromlib-lib.md" {
 		t.Errorf("file = %q", got)
 	}
-	if got := tagged("api-doc", "flow", true); got != "api-doc@flow" {
+	// One uniform "-fromlib-" separator for every category (skill names are
+	// additionally sanitized: "@" is illegal in Agent Skills names).
+	if got := tagged("api-doc", "flow", true); got != "api-doc-fromlib-flow" {
 		t.Errorf("directory = %q", got)
 	}
 }
@@ -173,7 +175,7 @@ func TestConflictRename(t *testing.T) {
 	p := compute(t, cfg)
 	got := strings.Join(names(p, "rules"), ",")
 	// both sides of a conflict get tagged; unconflicted items stay untouched
-	for _, want := range []string{"python-style@lib.md", "python-style@flow.md", "git-commit.md"} {
+	for _, want := range []string{"python-style-fromlib-lib.md", "python-style-fromlib-flow.md", "git-commit.md"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("rules missing %s (got: %s)", want, got)
 		}
@@ -218,10 +220,10 @@ func TestConflictError(t *testing.T) {
 }
 
 // Collisions are still possible after rename: the source may already contain a
-// name like python-style@lib.md
+// name like python-style-fromlib-flow.md
 func TestDetectCollisions(t *testing.T) {
 	cfg, lib, _ := setupTwoSources(t, "rename", "error")
-	writeFile(t, filepath.Join(lib, "rule", "python-style@flow.md"), "coincidental name\n")
+	writeFile(t, filepath.Join(lib, "rule", "python-style-fromlib-flow.md"), "coincidental name\n")
 	p := compute(t, cfg)
 	if len(p.Collisions) != 1 {
 		t.Fatalf("expected 1 final-name collision, got %+v", p.Collisions)
@@ -403,11 +405,11 @@ func TestRewriteSkillName(t *testing.T) {
 	dir := t.TempDir()
 	p := filepath.Join(dir, "SKILL.md")
 	writeFile(t, p, "---\nname: api-doc\ndescription: x\n---\nbody text\n")
-	if err := RewriteSkillName(p, "api-doc@flow"); err != nil {
+	if err := RewriteSkillName(p, "api-doc-fromlib-flow"); err != nil {
 		t.Fatal(err)
 	}
 	raw, _ := os.ReadFile(p)
-	if !strings.Contains(string(raw), "name: api-doc@flow") {
+	if !strings.Contains(string(raw), "name: api-doc-fromlib-flow") {
 		t.Errorf("front-matter not rewritten:\n%s", raw)
 	}
 	if !strings.Contains(string(raw), "description: x") || !strings.Contains(string(raw), "body text") {

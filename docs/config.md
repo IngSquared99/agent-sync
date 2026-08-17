@@ -67,7 +67,7 @@ mount:
 
 | 策略 | 行為 | 適合 |
 |---|---|---|
-| `rename` | 兩份都留，檔名各加來源標記（`python-style@all-ai-lib.md`） | rules：全域基準＋專案例外常需共存 |
+| `rename` | 兩份都留，檔名各加來源標記（`python-style-fromlib-all-ai-lib.md`） | rules：全域基準＋專案例外常需共存 |
 | `error` | 停下來列出衝突，請你手動處理（最保守） | skills：兩個相似 skill 並存會讓觸發不可預測 |
 | `first` | 只留優先級高的那份，其餘丟棄（plan 會列出丟了什麼） | 明確想要「專案覆蓋全域」的情況 |
 

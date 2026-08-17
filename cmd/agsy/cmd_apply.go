@@ -144,7 +144,8 @@ func cmdApply() int {
 	if len(p.Ignored) > 0 {
 		fmt.Printf(i18n.T("⚠ %d files do not match the inclusion rules and were left out (agsy plan shows the list)\n"), len(p.Ignored))
 	}
-	if _, err := build.Execute(cfg, p); err != nil {
+	newM, err := build.Execute(cfg, p)
+	if err != nil {
 		return errExit(err)
 	}
 	fmt.Printf(i18n.T("✔ build done: %d items → %s/\n"), p.Placed(), cfg.Build.Out)
@@ -160,6 +161,36 @@ func cmdApply() int {
 		return 1
 	}
 	fmt.Printf(i18n.T("✔ mount done: %d links\n"), len(links))
+
+	// Record the links this apply created (orphan detection needs them), then
+	// surface links a previous apply created that this config no longer
+	// references. Reported, never deleted — same rule as real directories:
+	// only clean removes what agsy built, and only after its confirmation.
+	created := map[string]bool{}
+	for _, l := range links {
+		newM.Mounts = append(newM.Mounts, l.LinkPath)
+		created[l.LinkPath] = true
+	}
+	var orphans []string
+	if mErr == nil && m != nil {
+		for _, lp := range m.Mounts {
+			if !created[lp] && mount.IsManagedLink(lp, cfg.OutDir()) {
+				orphans = append(orphans, lp)
+			}
+		}
+	}
+	// Keep orphans on the record so status keeps reporting them until handled.
+	newM.Mounts = append(newM.Mounts, orphans...)
+	if err := build.WriteManifest(cfg.OutDir(), newM); err != nil {
+		fmt.Println(i18n.T("⚠ failed to record mounts in the manifest:"), err)
+	}
+	if len(orphans) > 0 {
+		fmt.Printf(i18n.T("⚠ %d links from a previous apply are no longer referenced by the current mount config:\n"), len(orphans))
+		for _, o := range orphans {
+			fmt.Println("  -", o)
+		}
+		fmt.Println(i18n.T("  Tools reading those directories still see old content. Delete them manually, or agsy clean removes them together with everything else agsy built."))
+	}
 	return 0
 }
 

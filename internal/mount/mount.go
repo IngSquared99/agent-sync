@@ -12,8 +12,8 @@ import (
 	"path/filepath"
 	"sort"
 
-	"github.com/IngSquared99/agent-sync/internal/config"
 	"github.com/IngSquared99/agent-sync/i18n"
+	"github.com/IngSquared99/agent-sync/internal/config"
 )
 
 // LinkState is the current state of a single link.
@@ -99,6 +99,28 @@ func Inspect(cfg *config.Config) ([]LinkPlan, error) {
 		}
 	}
 	return plans, nil
+}
+
+// IsManagedLink reports whether path is a link created by this tool: it must
+// be a link and it must resolve into the build output directory. Junctions
+// whose target cannot be read are conservatively not claimed (never delete on
+// a guess). This is the safety check every consumer of manifest.Mounts must
+// pass a path through — the manifest itself is untrusted.
+func IsManagedLink(linkPath, outDir string) bool {
+	fi, err := os.Lstat(linkPath)
+	if err != nil || !isLink(fi, linkPath) {
+		return false
+	}
+	cur, err := os.Readlink(linkPath)
+	if err != nil {
+		return false
+	}
+	if !filepath.IsAbs(cur) {
+		cur = filepath.Join(filepath.Dir(linkPath), cur)
+	}
+	cur = filepath.Clean(cur)
+	out := filepath.Clean(outDir)
+	return cur == out || config.IsAncestor(out, cur)
 }
 
 // Probe actually tests whether this machine can create directory links (used

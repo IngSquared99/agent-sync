@@ -169,8 +169,8 @@ mount:
 
 ```
   ~/all-all-ai-lib/rule/python-style.md ──┐                 rename 策略(兩份都保留、都標出處)
-                                  ├── 同名!──→     python-style@all-ai-lib.md
-  ./repo-all-ai-lib/rule/python-style.md ───┘                 python-style@repo-ai-lib.md
+                                  ├── 同名!──→     python-style-fromlib-all-ai-lib.md
+  ./repo-all-ai-lib/rule/python-style.md ───┘                 python-style-fromlib-repo-ai-lib.md
 
                                                     first:只留優先來源的一份
                                                     error:停下來,列出清單讓你處理

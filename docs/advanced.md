@@ -9,8 +9,8 @@ promote 的完整規則，以及幾個要知道的邊界。
 
 ```
   ~/all-ai-lib/rule/python-style.md ──┐        rename：兩份都留、都加標記
-                                      ├─ 撞名 ─→   python-style@all-ai-lib.md
-  ./repo-ai-lib/rule/python-style.md ─┘            python-style@repo-ai-lib.md
+                                      ├─ 撞名 ─→   python-style-fromlib-all-ai-lib.md
+  ./repo-ai-lib/rule/python-style.md ─┘            python-style-fromlib-repo-ai-lib.md
 
                                           first：只留優先級高的那份（plan 列出丟棄清單）
                                           error：停下來列清單，請你手動處理
@@ -20,8 +20,10 @@ promote 的完整規則，以及幾個要知道的邊界。
 
 - **rename 是雙方都改名**，不是只改後來者——看到帶標記的檔名就知道發生過合併。
 - 來源標記取自來源路徑的最後一段；兩個來源同名時自動往上取父目錄組合，保證標記唯一。
-- 被 rename 的 **skill** 連 `SKILL.md` front-matter 裡的 `name` 都會同步改寫
-  （promote 回寫時再自動還原原名，帶標記的名字不會漏回來源）。
+- 三種文件**統一**使用 `-fromlib-` 分隔（`python-style-fromlib-god-lib.md`、
+  `code-review-fromlib-god-lib`）。不用 `@` 是因為 Agent Skills 規範只允許小寫字母、
+  數字與單一連字號，`@` 會讓 skill 靜默無法載入；skill 名稱另會自動轉為合規字元，
+  `SKILL.md` 的 `name` 同步改寫成目錄名（promote 回寫時自動還原原名）。
 - rename 之後如果**最終檔名還是撞**（極端巧合），一律擋下不建置——絕不無聲覆蓋。
 
 ## workflow 分流（route）
@@ -51,7 +53,8 @@ promote 的完整規則，以及幾個要知道的邊界。
 | `--to` 搬家 | 只搬內容，舊來源檔案還在——提醒你下次 build 會同名兩份，確認後手動刪舊 |
 
 `--to` 只接受 `agsy.yaml` 裡已設定的來源——指到其他路徑會被直接拒絕。
-另外，所有回寫目的地（不只 `--to`）都必須落在已設定的來源底下：
+更進一步，所有回寫目的地都必須是**該項目自己的位置**：`<來源>/<類別子目錄>/<原名>`，
+層級或名稱不對一律拒絕（防止被竄改的 manifest 指到父目錄造成整層覆寫）。
 manifest 放在掛載工具寫得到的產物層，不能盲信；`agsy.yaml` 由你控制、
 不在掛載層，才是回寫目的地的信任根。
 
@@ -62,13 +65,17 @@ AI 在 `.claude/` 裡**新建**的檔案（不是修改既有檔案）沒有原�
 status 會把它列為「未追蹤」，apply 也會先列出、問過你才刪——但想留下它，
 唯一的路是手動搬進來源資料夾再 apply。
 
-**init 修改模式會正規化整份設定。** 手動改過 `categories`、`route.field`、
-部分 `route.default` 的專案，重跑 init 會被範本預設值取代——寫入前的 diff 是最後防線,
-所以不要在這類專案上用 `agsy init --yes`(會跳過 diff)。
+**init 修改模式會沿用手寫欄位、但會換掉註解。** `categories`、`route.field`、`route.buckets`
+與部分設定的 `route.default` 都會原樣保留（與自訂 mount 同一待遇）；
+但 yaml 裡你自己寫的註解仍會被範本註解取代，寫入前的 diff 是最後檢查點。
 
 **來源中的符號連結（symlink）一律不收錄。** build 複製的是檔案內容，
 跟隨連結等於允許共用庫把來源外的任意檔案（例如私鑰）偷渡進掛載層，
 所以連結本身、以及內部藏有連結的 skill 目錄，都會被列入「不符收錄規則」並拒收。
+
+**改掉 mount 設定後，舊連結會被列為「孤兒」。** apply 與 status 都會回報
+「先前建立、現已不被引用」的連結（工具還在讀它們就會拿到舊內容），但依「絕不代刪」原則
+不會自動移除——手動刪除，或 `agsy clean` 一併清理。
 
 **Windows junction 存絕對路徑。** 專案整個搬目錄後連結會失效——`agsy status` 會報掛載異常，
 重跑 `agsy apply` 即修復。（macOS / Linux 用相對 symlink，搬目錄不受影響。）

@@ -5,14 +5,14 @@ package main
 
 import (
 	"fmt"
+	"github.com/IngSquared99/agent-sync/adapters"
 	"os"
 	"runtime"
 	"sort"
 	"strings"
-	"github.com/IngSquared99/agent-sync/adapters"
 
-	"github.com/IngSquared99/agent-sync/internal/config"
 	"github.com/IngSquared99/agent-sync/i18n"
+	"github.com/IngSquared99/agent-sync/internal/config"
 	"github.com/IngSquared99/agent-sync/internal/prompt"
 	"github.com/IngSquared99/agent-sync/internal/yaml"
 )

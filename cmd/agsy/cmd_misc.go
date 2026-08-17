@@ -26,9 +26,27 @@ func cmdClean() int {
 		fmt.Println(i18n.T("Cancelled."))
 		return 1
 	}
+	// Load the manifest before the output is removed: its mount record is the
+	// only trace of links whose mount entry was later edited away (orphans).
+	var recorded []string
+	if m, err := build.LoadManifest(cfg.OutDir()); err == nil {
+		recorded = m.Mounts
+	}
 	removed, skipped, err := mount.RemoveLinks(cfg)
 	if err != nil {
 		return errExit(err)
+	}
+	for _, lp := range recorded {
+		// Untrusted list: only paths that verifiably are agsy links (a link
+		// resolving into the output) are removed; anything else is left alone.
+		if mount.IsManagedLink(lp, cfg.OutDir()) {
+			if e := os.Remove(lp); e == nil {
+				removed = append(removed, lp)
+				if entries, e := os.ReadDir(filepath.Dir(lp)); e == nil && len(entries) == 0 {
+					_ = os.Remove(filepath.Dir(lp))
+				}
+			}
+		}
 	}
 	for _, r := range removed {
 		fmt.Println(i18n.T("✔ Removed link"), r)

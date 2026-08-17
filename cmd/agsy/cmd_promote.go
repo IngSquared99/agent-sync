@@ -217,6 +217,61 @@ func promoteInteractive(cfg *config.Config, out string, m *build.Manifest, local
 	return 0
 }
 
+// resolvePromoteDest computes and validates the write-back destination for an
+// item. Every destination trust rule lives here, in one place.
+//
+// Threat model: the manifest lives in the build output — the one layer mounted
+// AI tools can write to — so From / Original must never be able to point a
+// write (or the RemoveAll preceding a directory write) anywhere except the
+// item's own slot: <configured source>/<categories.from>/<original name>.
+// "somewhere inside a source" is NOT enough — a manifest pointing at the
+// category directory itself, or a parent, would let the directory write-back
+// RemoveAll a whole tree of originals. agsy.yaml is user-owned and outside the
+// output; its sources plus the category layout are the trust anchor.
+// (Residual surface, accepted: a fully forged manifest can still target ONE
+// sibling item slot in the same category — that equals what a legitimate
+// promote of that item could do, and status shows the origin path first.)
+func resolvePromoteDest(cfg *config.Config, it build.ManifestItem, toRaw string) (string, error) {
+	from := cfg.Build.Categories[it.Category].From
+	dest := it.From
+	if toRaw != "" {
+		abs, err := cfg.ExpandPath(toRaw)
+		if err != nil {
+			return "", err
+		}
+		// --to may only point at a configured source: content written anywhere
+		// else silently leaves agsy's management, and an unrestricted redirect
+		// would defeat the slot check below.
+		isSource := false
+		for _, root := range cfg.SourceRoots() {
+			if root == abs {
+				isSource = true
+				break
+			}
+		}
+		if !isSource {
+			return "", fmt.Errorf(i18n.T("--to %s is not a source configured in %s; only configured sources may receive write-backs"), toRaw, config.FileName)
+		}
+		dest = filepath.Join(abs, from, it.Original)
+	}
+	dest = filepath.Clean(dest)
+	inSlot := false
+	for _, root := range cfg.SourceRoots() {
+		if filepath.Dir(dest) == filepath.Clean(filepath.Join(root, from)) {
+			inSlot = true
+			break
+		}
+	}
+	if !inSlot || filepath.Base(dest) != it.Original {
+		return "", fmt.Errorf(i18n.T("destination %s is not the item's own slot <source>/%s/%s — the manifest may be tampered with or stale (agsy apply rebuilds it)"), dest, from, it.Original)
+	}
+	// Never write through a link sitting at the destination.
+	if fi, err := os.Lstat(dest); err == nil && fi.Mode()&os.ModeSymlink != 0 {
+		return "", fmt.Errorf(i18n.T("destination %s is a symbolic link; refusing to write through it"), dest)
+	}
+	return dest, nil
+}
+
 // promoteOne writes back a single item. A non-empty toRaw redirects it
 // (relocates it into the matching category subdirectory of the given source).
 // When confirm is true, writing into a shared library outside the project asks
@@ -246,39 +301,9 @@ func promoteOne(cfg *config.Config, out string, m *build.Manifest, lc state.Loca
 		return 1
 	}
 	srcCopy := filepath.Join(out, filepath.FromSlash(lc.OutPath))
-	dest := it.From
-	if toRaw != "" {
-		abs, err := cfg.ExpandPath(toRaw)
-		if err != nil {
-			fmt.Println("✘", err)
-			return 1
-		}
-		// --to may only point at a source configured in agsy.yaml: content
-		// written anywhere else silently leaves agsy's management (the next
-		// build would not pick it up), and an unrestricted redirect would
-		// defeat the destination guard below.
-		isSource := false
-		for _, root := range cfg.SourceRoots() {
-			if root == abs {
-				isSource = true
-				break
-			}
-		}
-		if !isSource {
-			fmt.Printf(i18n.T("✘ --to %s is not a source configured in %s; refusing to write outside the configured sources\n"), toRaw, config.FileName)
-			return 1
-		}
-		from := cfg.Build.Categories[it.Category].From
-		dest = filepath.Join(abs, from, it.Original)
-	}
-	// Destination guard: dest otherwise comes from the manifest, which lives in
-	// the build output — the one layer mounted AI tools can write to. A
-	// tampered manifest could redirect promote at an arbitrary path, and
-	// writeBack would overwrite whatever is there (directories are removed
-	// first). agsy.yaml is user-owned and outside the output, so its sources
-	// are the trust anchor: refuse destinations outside every configured source.
-	if _, ok := cfg.SourceRootOf(dest); !ok {
-		fmt.Printf(i18n.T("✘ refusing to write back %s/%s: destination %s is not inside any source configured in %s (a tampered or stale manifest could otherwise redirect the write; if you changed sources recently, run agsy apply first)\n"), it.Category, it.Name, dest, config.FileName)
+	dest, destErr := resolvePromoteDest(cfg, it, toRaw)
+	if destErr != nil {
+		fmt.Printf(i18n.T("✘ refusing to write back %s/%s: %v\n"), it.Category, it.Name, destErr)
 		return 1
 	}
 	if confirm && outsideProject(cfg, dest) {
@@ -294,7 +319,7 @@ func promoteOne(cfg *config.Config, out string, m *build.Manifest, lc state.Loca
 	}
 	// For a skill renamed in the output, the front-matter name is the
 	// build-rewritten, output-only name. Writing it back verbatim would leak a
-	// name like python-style@lib — valid only in the output — into the source (§12-2).
+	// name like python-style-fromlib-lib — valid only in the output — into the source (§12-2).
 	if it.Renamed && it.Category == "skills" {
 		origName := it.Original
 		if err := build.RewriteSkillName(filepath.Join(dest, "SKILL.md"), origName); err != nil {

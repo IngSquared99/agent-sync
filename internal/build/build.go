@@ -71,6 +71,12 @@ type Manifest struct {
 	BuiltAt string         `json:"built_at"`
 	Sources []string       `json:"sources"`
 	Items   []ManifestItem `json:"items"`
+	// Mounts records the link paths created by the last apply. Its only use is
+	// detecting orphans: links agsy created earlier that the current mount
+	// config no longer references (tools keep reading them while status would
+	// otherwise claim all green). Untrusted like the rest of the manifest —
+	// consumers must verify a path IS a link into the output before touching it.
+	Mounts []string `json:"mounts,omitempty"`
 }
 
 // SourceState is the result of expanding a source
@@ -377,13 +383,48 @@ func detectCollisions(p *Plan) {
 	}
 }
 
-// tagged builds a name carrying a source tag: python-style.md + flow → python-style@flow.md
+// tagged builds a name carrying a source tag, using one uniform separator for
+// every category: python-style.md + god-lib → python-style-fromlib-god-lib.md,
+// code-review + god-lib → code-review-fromlib-god-lib.
+// "-fromlib-" (not "@") because skill names must obey the Agent Skills spec —
+// lowercase a-z0-9 and single hyphens only, front-matter name == directory
+// name — where "@" makes the skill silently fail to load; the same separator
+// is applied to plain files too so all three categories read alike.
+// Skill names are additionally sanitized into the spec's character set.
 func tagged(name, tag string, isDir bool) string {
 	if isDir {
-		return name + "@" + tag
+		return sanitizeSkillName(name + "-fromlib-" + tag)
 	}
 	ext := filepath.Ext(name)
-	return strings.TrimSuffix(name, ext) + "@" + tag + ext
+	return strings.TrimSuffix(name, ext) + "-fromlib-" + tag + ext
+}
+
+// sanitizeSkillName forces a candidate skill name into the Agent Skills spec:
+// lowercase a-z0-9 and hyphens, no leading/trailing/consecutive hyphens, at
+// most 64 characters. Sanitized names can collide (God-Lib vs god-lib);
+// detectCollisions catches that and blocks the build rather than overwrite.
+func sanitizeSkillName(s string) string {
+	var sb strings.Builder
+	prevDash := false
+	for _, r := range strings.ToLower(s) {
+		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') {
+			sb.WriteRune(r)
+			prevDash = false
+			continue
+		}
+		if !prevDash {
+			sb.WriteByte('-')
+			prevDash = true
+		}
+	}
+	name := strings.Trim(sb.String(), "-")
+	if len(name) > 64 {
+		name = strings.Trim(name[:64], "-")
+	}
+	if name == "" {
+		name = "skill"
+	}
+	return name
 }
 
 // frontMatter parses the YAML block wrapped in --- at the top of a Markdown file
