@@ -98,30 +98,72 @@
 <p>當你同時使用多個 AI 開發工具（Claude Code、OpenAI Codex、Antigravity…），每個工具都有自己的指令檔目錄：Claude Code 讀 <code>.claude/rules/</code>、<code>.claude/skills/</code>、<code>.claude/commands/</code>；Codex 讀 <code>.codex/prompts/</code>；Antigravity 讀 <code>.agents/</code>。同一份規範得複製好幾份、改一處要同步好幾處，而且你可能還想把「個人共用的一套」和「專案專屬的一套」疊在一起用。</p>
 <blockquote><p><strong>agsy（agent-sync）</strong>：把多個來源（sources）的指令檔<strong>合併建置</strong>成單一產物目錄（預設 <code>.agsy/</code>），再用<strong>目錄連結</strong>掛載進每個工具的讀取位置。改動時只改來源，跑一次 <code>agsy apply</code>，所有工具同時更新。</p></blockquote>
 
+<h2>開始前，先認識幾個名詞</h2>
+<p>後面的說明會一直用到這些詞。先大概有個印象，讀起來就不會卡；中途忘記了，隨時回來這張表查。</p>
+<table>
+<tr><th>名詞</th><th>意思</th></tr>
+<tr><td>source（來源）</td><td>你維護的原始指令檔庫（<code>sources</code> 陣列），可以有多個</td></tr>
+<tr><td>build out（產物）</td><td><code>apply</code> 建置出的目錄，預設 <code>.agsy/</code>。裡面全是複本，整個可以砍掉重建</td></tr>
+<tr><td>mount（掛載）</td><td>在各工具的目錄裡建立指向產物的「連結」</td></tr>
+<tr><td>連結（symlink / junction）</td><td>作業系統的「捷徑」：一個指向別處資料夾的入口，打開它等於打開目標資料夾，<strong>不會多存一份檔案</strong></td></tr>
+<tr><td>category（類別）</td><td>指令檔的三種分類：rules（規則）、skills（技能）、workflows（工作流程）</td></tr>
+<tr><td>bucket（桶子）</td><td>產物裡 <code>workflows/</code> 底下按工具分的子資料夾（如 <code>claude</code>、<code>codex</code>），一個工具掛一桶</td></tr>
+<tr><td>routing（分流）</td><td>建置時決定「每份 workflow 要進哪些桶」的過程，依據是檔案裡的 <code>target</code> 標記</td></tr>
+<tr><td>manifest</td><td><code>.agsy/.agsy-manifest.json</code>，建置紀錄檔；agsy 靠它判斷「哪邊被改過」</td></tr>
+<tr><td>source tag（來源標籤）</td><td>同名檔案改名保留時附加的來源識別，如 <code>-fromlib-all-ai-lib</code></td></tr>
+<tr><td>adapter（適配器）</td><td>內建的「各家工具掛載範本」，<code>init</code> 時用來產生掛載設定</td></tr>
+<tr><td>behind</td><td>來源已更新、產物還沒重建 → 該跑 <code>apply</code></td></tr>
+<tr><td>local changes（本機改動）</td><td>掛載側被改了、還沒寫回來源 → 該跑 <code>promote</code></td></tr>
+<tr><td>untracked</td><td>掛載側新增、manifest 不認識的檔案（<code>apply</code> 會刪；要保留請搬回來源）</td></tr>
+<tr><td>orphan（孤兒連結）</td><td>之前的 <code>apply</code> 建立、但現在設定已不再引用的連結</td></tr>
+</table>
+
 <h2>三層架構</h2>
+<p>agsy 的世界只有三層、兩個動作。先看最簡化的版本：</p>
+<pre><code> 你維護的來源     ── ①建置（複製）──▶    產物目錄     ── ②掛載（連結）──▶   各 AI 工具的目錄
+   sources                             .agsy/                           .claude/ .codex/ …</code></pre>
+<ul>
+<li><strong>來源（sources）</strong>：你真正維護、進版控的原始檔。可有多個，順序＝優先權。</li>
+<li><strong>產物</strong>（<code>build.out</code>，預設 <code>.agsy/</code>）：<strong>整個目錄視為可重建的拋棄式產出</strong>——<code>apply</code> 每次清空重建，手寫的東西別直接放進去（除非打算用 <code>promote</code> 寫回）。</li>
+<li><strong>掛載（mount）</strong>：在各工具目錄建立指向產物的連結；工具看到的是連結，內容都在 <code>.agsy/</code>。</li>
+</ul>
+<p>接下來把 ① 和 ② 兩個動作分開看清楚。</p>
+
+<h3>動作①「建置」：把多個來源合併「複製」成一份</h3>
+<pre><code> ~/all-ai-lib/rule/python-style.md  ──┐
+ ~/all-ai-lib/rule/git-commit.md    ──┤  複製、合併
+ ./repo-ai-lib/rule/api-naming.md   ──┘
+                                       ▼
+                              .agsy/rules/python-style.md
+                              .agsy/rules/git-commit.md
+                              .agsy/rules/api-naming.md</code></pre>
+<p>這張圖的重點只有一個：<strong>產物裡的檔案是「複本」</strong>。來源可以散落在好幾個地方（個人共用庫、專案內的庫…），建置後全部集中成一份；也正因為是複本，整個 <code>.agsy/</code> 隨時可以砍掉重建，不心疼。</p>
+
+<h3>動作②「掛載」：建一個「連結」，不是再複製一次</h3>
+<pre><code> .claude/rules   ────────── 連結（捷徑）──────────▶   .agsy/rules/
+ （工具從這裡讀）                                    （檔案實際只存在這裡）</code></pre>
+<p>這張圖的重點也只有一個：<code>.claude/rules</code> <strong>不是一個真的資料夾</strong>，而是一個連結（macOS / Linux 用 symlink，Windows 用 junction）——像捷徑一樣，打開它看到的就是 <code>.agsy/rules/</code> 裡的內容。所以：同一份檔案不會佔兩份空間；<code>.agsy/</code> 一更新，所有工具<strong>立刻</strong>看到新內容，不需要再做一次「同步」。</p>
+
+<h3>把兩個動作串起來：完整樣貌</h3>
+<p>前面兩個動作都懂了之後，一個掛載完成的專案整體長這樣（看不懂的話，回頭看上面兩張小圖即可）：</p>
 <pre><code>┌────────────────────┐
 │  來源 sources       │  ~/all-ai-lib/       （個人共用庫，跨專案）
 │ （你維護的原始檔）    │  ./repo-ai-lib/      （專案內的庫）
 └─────────┬──────────┘
-          │  agsy apply（掃描 → 合併 → 複製）
+          │  ① agsy apply：掃描 → 合併 → 複製
           ▼
 ┌────────────────────┐
 │  產物 build.out     │  .agsy/rules/
-│ （可整個重建的成品）  │  .agsy/skills/
+│ （可整個重建的複本）  │  .agsy/skills/
 │                    │  .agsy/workflows/&lt;bucket&gt;/
 └─────────┬──────────┘
-          │  agsy apply（建立目錄連結 symlink / junction）
+          │  ② agsy apply：建立目錄連結（symlink / junction）
           ▼
 ┌────────────────────┐
 │  掛載 mount         │  .claude/rules  → ../.agsy/rules
 │ （各 AI 工具實際     │  .claude/skills → ../.agsy/skills
 │   讀取的位置）       │  .codex/prompts → ../.agsy/workflows/codex
 └────────────────────┘</code></pre>
-<ul>
-<li><strong>來源</strong>：你真正維護、進版控的原始檔。可有多個，順序＝優先權。</li>
-<li><strong>產物</strong>（<code>build.out</code>，預設 <code>.agsy/</code>）：<strong>整個目錄視為可重建的拋棄式產出</strong>——<code>apply</code> 每次清空重建，手寫的東西別直接放進去（除非打算用 <code>promote</code> 寫回）。</li>
-<li><strong>掛載</strong>：在各工具目錄建立指向產物的連結；工具看到的是連結，內容都在 <code>.agsy/</code>。</li>
-</ul>
 
 <h2>三種類別（categories）</h2>
 <table>
@@ -131,22 +173,42 @@
 <tr><td>workflows</td><td><code>workflow/</code></td><td>單一 <code>.md</code>，front-matter 可標 <code>target</code></td><td><code>.agsy/workflows/&lt;bucket&gt;/</code></td></tr>
 </table>
 
-<h2>workflows 的分流（routing 與 bucket）</h2>
-<p>rules 和 skills 所有工具共用一份；workflows 則依 front-matter 的 <code>target</code> 欄位分流到不同 bucket（子目錄）：</p>
+<h2>workflows 的分流：bucket 與 routing</h2>
+<p>rules 和 skills 建置後<strong>所有工具讀同一份</strong>；workflows 不一樣——每個工具的「指令／prompt」格式與用途不一定通用，所以產物裡的 <code>workflows/</code> 又按工具分成子資料夾：</p>
+<pre><code>.agsy/workflows/
+├── claude/        ←  Claude Code 專用（.claude/commands 掛的就是這裡）
+└── codex/         ←  Codex 專用（.codex/prompts 掛的就是這裡）</code></pre>
+<p>先把兩個名詞接起來：</p>
+<ul>
+<li>這些子資料夾就叫 <strong>bucket（桶子）</strong>：一個工具一個桶，各工具只掛載自己的桶。</li>
+<li>建置時 agsy 決定「每份 workflow 該丟進哪些桶」的過程，就叫 <strong>routing（分流）</strong>。</li>
+</ul>
+<p>分流的依據，是 workflow 檔案開頭 front-matter 的 <code>target</code> 標記：</p>
+<pre><code> workflow/release.md （target: claude）          ──▶  只進 claude 桶 → 只有 Claude Code 看得到
+ workflow/deploy.md  （target: [claude, codex]） ──▶  兩個桶各放一份 → 兩個工具都看得到
+ workflow/note.md    （沒寫 target）             ──▶  依 route.default 的設定決定去向</code></pre>
+<p><code>target</code> 的寫法就是在檔案最上方：</p>
 <pre><code>---
 target: claude          # 只給 Claude Code
-# 或 target: [claude, codex]
+# 或 target: [claude, codex]  # 兩者都要
 ---
 Release 流程說明…</code></pre>
-<p>沒標 <code>target</code> 的 workflow 落入 <code>route.default</code> 設定的 bucket（建議設為全部）。</p>
+<p><strong>沒寫 <code>target</code> 會怎樣？</strong>落入設定檔 <code>route.default</code> 指定的桶。建議把 default 設成「全部的桶」——一份檔案「到處都出現」比「神祕消失」容易理解得多。</p>
 
 <h2>雙向資料流：apply 與 promote</h2>
-<pre><code>sources  ──── apply ───▶  .agsy/（掛載給工具）
-sources  ◀── promote ───  .agsy/</code></pre>
-<ul>
-<li><strong>apply（正向）</strong>：來源改了 → 重建產物、更新掛載。</li>
-<li><strong>promote（反向）</strong>：你（或 AI 工具）直接改了掛載側的檔案 → 寫回來源，改動才不會在下次 apply 被蓋掉。</li>
-</ul>
+<p><strong>apply（正向）：來源 → 產物。</strong>平常的改動都走這條——改來源、跑 apply，所有工具同步更新：</p>
+<pre><code> sources（你在這裡改檔案）
+    │
+    │  agsy apply（重新建置＋掛載）
+    ▼
+ .agsy/ ──連結──▶  所有工具立刻讀到新內容</code></pre>
+<p><strong>promote（反向）：產物 → 來源。</strong>當你（或 AI 工具）直接改了掛載側的檔案——因為掛載是連結，實際被改到的是 <code>.agsy/</code> 裡的複本——就用 promote 把改動收回來源：</p>
+<pre><code> .claude/skills/…（AI 工具直接改了這裡的檔案）
+    ‖  掛載是連結，所以實際改到的是 .agsy/ 裡的複本
+    │
+    │  agsy promote（把改動寫回）
+    ▼
+ sources（改動被保存——下次 apply 重建時才不會被蓋掉）</code></pre>
 <p>agsy 用 <code>.agsy/.agsy-manifest.json</code> 記錄建置當下來源與產物的雜湊值，<code>status</code> 因此能精準區分「來源更新了還沒重建」（behind）、「掛載側被改了還沒寫回」（local changes）、以及兩邊同時被改（需人工合併）。</p>
 
 <h2>設計上的安全底線</h2>
@@ -157,22 +219,6 @@ sources  ◀── promote ───  .agsy/</code></pre>
 <li><strong>產物目錄防呆</strong>：<code>build.out</code> 只能是專案內專用目錄，指到家目錄／來源／專案根都會被擋。</li>
 <li><strong>不收符號連結</strong>：避免透過連結把來源以外的檔案夾帶進產物。</li>
 </ol>
-
-<h2>名詞小抄</h2>
-<table>
-<tr><th>名詞</th><th>意思</th></tr>
-<tr><td>source（來源）</td><td>你維護的原始指令檔庫（<code>sources</code> 陣列）</td></tr>
-<tr><td>build out（產物）</td><td><code>apply</code> 建置出的目錄，預設 <code>.agsy/</code>，整個可重建</td></tr>
-<tr><td>mount（掛載）</td><td>在工具目錄建立指向產物的連結</td></tr>
-<tr><td>bucket</td><td>workflows 分流的目的地子目錄（如 <code>claude</code>、<code>codex</code>）</td></tr>
-<tr><td>manifest</td><td><code>.agsy/.agsy-manifest.json</code>，建置紀錄與變更偵測基準</td></tr>
-<tr><td>source tag</td><td>同名改名時附加的來源識別，如 <code>-fromlib-all-ai-lib</code></td></tr>
-<tr><td>adapter（適配器）</td><td>內建工具掛載範本，<code>init</code> 用來產生 mount 設定</td></tr>
-<tr><td>behind</td><td>來源已更新、產物還沒重建（該 apply）</td></tr>
-<tr><td>local changes</td><td>掛載側被改了、還沒寫回（該 promote）</td></tr>
-<tr><td>untracked</td><td>掛載側新增、manifest 不認識的檔案（apply 會刪；要留請搬回來源）</td></tr>
-<tr><td>orphan（孤兒連結）</td><td>之前 apply 建立、現在設定已不引用的連結</td></tr>
-</table>
 
 <!-- ============ A. 安裝 ============ -->
 <h1 id="install">A. 安裝說明</h1>

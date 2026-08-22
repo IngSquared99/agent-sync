@@ -16,21 +16,84 @@
 
 改動時只改來源，跑一次 `agsy apply`，所有工具同時更新。
 
+## 開始前，先認識幾個名詞
+
+後面的說明會一直用到這些詞。先大概有個印象，讀起來就不會卡；中途忘記了，隨時回來這張表查。
+
+| 名詞 | 意思 |
+|------|------|
+| source（來源） | 你維護的原始指令檔庫，`agsy.yaml` 的 `sources` 陣列，可以有多個 |
+| build out（產物） | `apply` 建置出的目錄，預設 `.agsy/`。裡面全是複本，整個可以砍掉重建 |
+| mount（掛載） | 在各工具的目錄裡建立指向產物的「連結」 |
+| 連結（symlink / junction） | 作業系統的「捷徑」：一個指向別處資料夾的入口，打開它等於打開目標資料夾，**不會多存一份檔案** |
+| category（類別） | 指令檔的三種分類：rules（規則）、skills（技能）、workflows（工作流程） |
+| bucket（桶子） | 產物裡 `workflows/` 底下按工具分的子資料夾（如 `claude`、`codex`），一個工具掛一桶 |
+| routing（分流） | 建置時決定「每份 workflow 要進哪些桶」的過程，依據是檔案裡的 `target` 標記 |
+| manifest | `.agsy/.agsy-manifest.json`，建置紀錄檔；agsy 靠它判斷「哪邊被改過」 |
+| source tag（來源標籤） | 同名檔案改名保留時，附加在檔名上的來源識別，如 `-fromlib-all-ai-lib` |
+| adapter（適配器） | 內建的「各家工具掛載範本」，`init` 時用來產生掛載設定 |
+| behind | 來源已更新、產物還沒重建 → 該跑 `apply` |
+| local changes（本機改動） | 掛載側被改了、還沒寫回來源 → 該跑 `promote` |
+| untracked | 掛載側新增、manifest 不認識的檔案（`apply` 會刪掉；要保留請搬回來源） |
+| orphan（孤兒連結） | 之前的 `apply` 建立、但現在設定已不再引用的連結 |
+
 ## 三層架構
+
+agsy 的世界只有三層、兩個動作。先看最簡化的版本：
+
+```
+ 你維護的來源      ── ①建置（複製）──▶    產物目錄      ── ②掛載（連結）──▶   各 AI 工具的目錄
+   sources                              .agsy/                            .claude/ .codex/ …
+```
+
+- **來源（sources）**：你真正維護、進版控的原始檔。可以有多個，順序代表優先權（越前面越優先）。
+- **產物（build.out，預設 `.agsy/`）**：建置出來的成品，**整個目錄視為可重建的拋棄式產出**——`apply` 每次會清空重建，所以不要把手寫的東西直接放進去（除非你打算用 `promote` 寫回來源）。
+- **掛載（mount）**：在各工具的目錄裡建立指向產物的連結。工具看到的是連結，實際內容都在 `.agsy/` 裡。
+
+接下來把 ① 和 ② 兩個動作分開看清楚。
+
+### 動作①「建置」：把多個來源合併「複製」成一份
+
+```
+ ~/all-ai-lib/rule/python-style.md  ──┐
+ ~/all-ai-lib/rule/git-commit.md    ──┤  複製、合併
+ ./repo-ai-lib/rule/api-naming.md   ──┘
+                                       ▼
+                              .agsy/rules/python-style.md
+                              .agsy/rules/git-commit.md
+                              .agsy/rules/api-naming.md
+```
+
+這張圖的重點只有一個：**產物裡的檔案是「複本」**。來源可以散落在好幾個地方（個人共用庫、專案內的庫…），建置後全部集中成一份；也正因為是複本，整個 `.agsy/` 隨時可以砍掉重建，不心疼。
+
+### 動作②「掛載」：建一個「連結」，不是再複製一次
+
+```
+ .claude/rules   ────────── 連結（捷徑）──────────▶   .agsy/rules/
+ （工具從這裡讀）                                    （檔案實際只存在這裡）
+```
+
+這張圖的重點也只有一個：`.claude/rules` **不是一個真的資料夾**，而是一個連結（macOS / Linux 用 symlink，Windows 用 junction）——像捷徑一樣，打開它看到的就是 `.agsy/rules/` 裡的內容。
+
+所以：同一份檔案不會佔兩份空間；`.agsy/` 一更新，所有工具**立刻**看到新內容，不需要再做一次「同步」。
+
+### 把兩個動作串起來：完整樣貌
+
+前面兩個動作都懂了之後，一個掛載完成的專案整體長這樣（看不懂的話，回頭看上面兩張小圖即可）：
 
 ```
 ┌────────────────────┐
 │  來源 sources       │  ~/all-ai-lib/       （個人共用庫，跨專案）
 │ （你維護的原始檔）    │  ./repo-ai-lib/      （專案內的庫）
 └─────────┬──────────┘
-          │  agsy apply（掃描 → 合併 → 複製）
+          │  ① agsy apply：掃描 → 合併 → 複製
           ▼
 ┌────────────────────┐
 │  產物 build.out     │  .agsy/rules/
-│ （工具建置的成品，    │  .agsy/skills/
-│   可整個重建）       │  .agsy/workflows/<bucket>/
+│ （可整個重建的複本）  │  .agsy/skills/
+│                    │  .agsy/workflows/<bucket>/
 └─────────┬──────────┘
-          │  agsy apply（建立目錄連結 symlink / junction）
+          │  ② agsy apply：建立目錄連結（symlink / junction）
           ▼
 ┌────────────────────┐
 │  掛載 mount         │  .claude/rules  → ../.agsy/rules
@@ -38,10 +101,6 @@
 │   讀取的位置）       │  .codex/prompts → ../.agsy/workflows/codex
 └────────────────────┘
 ```
-
-- **來源（sources）**：你真正維護、進版控的原始檔。可以有多個，順序代表優先權（越前面越優先）。
-- **產物（build.out，預設 `.agsy/`）**：agsy 建置出來的成品，**整個目錄視為可重建的拋棄式產出**——`apply` 每次會清空重建，所以不要把手寫的東西直接放進去（除非你打算用 `promote` 寫回來源）。
-- **掛載（mount）**：在各工具的目錄裡建立指向產物的連結。工具看到的是連結，實際內容都在 `.agsy/` 裡。
 
 ## 三種類別（categories）
 
@@ -51,7 +110,7 @@
 |------|--------------------|------|----------|
 | rules | `rule/` | 單一 `.md` 檔 | `.agsy/rules/` |
 | skills | `skill/` | **目錄**，內含 `SKILL.md` | `.agsy/skills/` |
-| workflows | `workflow/` | 單一 `.md` 檔，front-matter 可標 `target` | `.agsy/workflows/<bucket>/` |
+| workflows | `workflow/` | 單一 `.md` 檔，開頭可標 `target` | `.agsy/workflows/<bucket>/` |
 
 一個典型的來源長這樣：
 
@@ -68,9 +127,30 @@
     └── release.md        （front-matter: target: claude）
 ```
 
-## workflows 的「分流」（routing 與 bucket）
+## workflows 的分流：bucket 與 routing
 
-rules 和 skills 是所有工具共用一份；workflows 則不同——每個工具的「指令／prompt」格式與用途不一定通用，所以 workflows 會依 front-matter 的 `target` 欄位**分流**到不同 bucket（子目錄）：
+rules 和 skills 建置後**所有工具讀同一份**；workflows 不一樣——每個工具的「指令／prompt」格式與用途不一定通用，所以產物裡的 `workflows/` 又按工具分成子資料夾：
+
+```
+.agsy/workflows/
+├── claude/        ←  Claude Code 專用（.claude/commands 掛的就是這裡）
+└── codex/         ←  Codex 專用（.codex/prompts 掛的就是這裡）
+```
+
+先把兩個名詞接起來：
+
+- 這些子資料夾就叫 **bucket（桶子）**：一個工具一個桶，各工具只掛載自己的桶。
+- 建置時 agsy 決定「每份 workflow 該丟進哪些桶」的過程，就叫 **routing（分流）**。
+
+分流的依據，是 workflow 檔案開頭 front-matter 的 `target` 標記：
+
+```
+ workflow/release.md （target: claude）          ──▶  只進 claude 桶 → 只有 Claude Code 看得到
+ workflow/deploy.md  （target: [claude, codex]） ──▶  兩個桶各放一份 → 兩個工具都看得到
+ workflow/note.md    （沒寫 target）             ──▶  依 route.default 的設定決定去向
+```
+
+`target` 的寫法就是在檔案最上方：
 
 ```markdown
 ---
@@ -80,17 +160,30 @@ target: claude          # 只給 Claude Code
 Release 流程說明…
 ```
 
-沒有標 `target` 的 workflow 會落入 `route.default` 設定的 bucket（預設是全部）。詳見[設定檔說明](03-config.md)與[適配器說明](05-adapters.md)。
+**沒寫 `target` 會怎樣？** 落入設定檔 `route.default` 指定的桶。建議把 default 設成「全部的桶」——一份檔案「到處都出現」比「神祕消失」容易理解得多。細節見[設定檔說明](03-config.md)與[適配器說明](05-adapters.md)。
 
 ## 雙向資料流：apply 與 promote
 
+**apply（正向）：來源 → 產物。** 平常的改動都走這條——改來源、跑 apply，所有工具同步更新：
+
 ```
-sources  ──── apply ───▶  .agsy/（掛載給工具）
-sources  ◀── promote ───  .agsy/
+ sources（你在這裡改檔案）
+    │
+    │  agsy apply（重新建置＋掛載）
+    ▼
+ .agsy/ ──連結──▶  所有工具立刻讀到新內容
 ```
 
-- **apply（正向）**：來源改了 → 重建產物、更新掛載。
-- **promote（反向）**：你（或 AI 工具）直接改了掛載側的檔案（例如 AI 在 `.claude/skills/` 裡幫你改了一個 skill）→ 用 `promote` 把改動**寫回來源**，改動才不會在下次 apply 被蓋掉。
+**promote（反向）：產物 → 來源。** 當你（或 AI 工具）直接改了掛載側的檔案——因為掛載是連結，實際被改到的是 `.agsy/` 裡的複本——就用 promote 把改動收回來源：
+
+```
+ .claude/skills/…（AI 工具直接改了這裡的檔案）
+    ‖  掛載是連結，所以實際改到的是 .agsy/ 裡的複本
+    │
+    │  agsy promote（把改動寫回）
+    ▼
+ sources（改動被保存——下次 apply 重建時才不會被蓋掉）
+```
 
 agsy 用 `.agsy/.agsy-manifest.json`（建置紀錄檔）記錄每個項目在建置當下的來源與產物雜湊值，因此 `status` 能精準判斷：哪些是「來源更新了還沒重建」（behind）、哪些是「掛載側被改了還沒寫回」（local changes）、兩邊是否同時被改（需要人工合併）。
 
@@ -103,21 +196,5 @@ agsy 用 `.agsy/.agsy-manifest.json`（建置紀錄檔）記錄每個項目在�
 3. **刪除前必先確認**：`apply` 會清空產物目錄，若偵測到未寫回的改動一定先問；非互動環境沒有 `--yes` 就取消，絕不硬做。
 4. **產物目錄位置有防呆**：`build.out` 只能是專案內的專用目錄，指到家目錄、來源目錄、專案根都會被設定驗證直接擋下。
 5. **不收符號連結**：來源裡的 symlink 一律不收（含 skill 目錄內部），避免透過連結把來源以外的檔案夾帶進產物。
-
-## 名詞小抄
-
-| 名詞 | 意思 |
-|------|------|
-| source（來源） | 你維護的原始指令檔庫，`agsy.yaml` 的 `sources` 陣列 |
-| build out（產物） | `apply` 建置出的目錄，預設 `.agsy/`，整個可重建 |
-| mount（掛載） | 在工具目錄建立指向產物的連結 |
-| bucket | workflows 分流的目的地子目錄（如 `claude`、`codex`） |
-| manifest | `.agsy/.agsy-manifest.json`，建置紀錄與變更偵測的基準 |
-| source tag（來源標籤） | 同名改名時附加在檔名上的來源識別，如 `-fromlib-all-ai-lib` |
-| adapter（適配器） | 內建的工具掛載範本，`init` 時用來產生 mount 設定 |
-| behind | 來源已更新、產物還沒重建（該跑 apply） |
-| local changes | 掛載側被改了、還沒寫回來源（該跑 promote） |
-| untracked | 掛載側新增、manifest 不認識的檔案（apply 會刪掉，要保留請搬回來源） |
-| orphan（孤兒連結） | 之前的 apply 建立、但現在設定已不再引用的連結 |
 
 → 下一章：[安裝說明](01-install.md)
