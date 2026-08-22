@@ -30,8 +30,8 @@ builds:
 
 archives:
   # No version in file names: keeps releases/latest/download/<name> as a
-  # permanent URL, so the one-line curl install in the README never needs
-  # updating. Versions are visible in checksums.txt and `agsy version`.
+  # permanent URL for manual downloads. Versions are visible in
+  # checksums.txt and `agsy version`.
   # Names use plain words (mac_apple_silicon / mac_intel / windows_x64 ...)
   # instead of GOOS/GOARCH jargon.
   - name_template: >-
@@ -78,3 +78,41 @@ homebrew_casks:
           if OS.mac?
             system_command "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "#{staged_path}/agsy"]
           end
+
+# winget (Windows built-in package manager): on each release goreleaser
+# pushes a manifest branch to the maintainer's fork of microsoft/winget-pkgs
+# and opens a PR against the upstream repo. The FIRST submission goes through
+# Microsoft review (may take days); later version bumps are usually merged
+# quickly by bots. Users then run: winget install IngSquared99.agsy
+# One-time setup: fork microsoft/winget-pkgs under IngSquared99; the token is
+# the same classic PAT (public_repo scope) used for the Homebrew tap.
+# Keep the fork reasonably in sync ("Sync fork" button) before releasing.
+winget:
+  - name: agsy
+    publisher: IngSquared99
+    package_identifier: IngSquared99.agsy
+    publisher_url: https://github.com/IngSquared99
+    publisher_support_url: https://github.com/IngSquared99/agent-sync/issues
+    homepage: https://github.com/IngSquared99/agent-sync
+    short_description: "Sync AI rules to every tool"
+    license: MIT
+    license_url: https://github.com/IngSquared99/agent-sync/blob/main/LICENSE
+    release_notes_url: https://github.com/IngSquared99/agent-sync/releases/tag/{{ .Tag }}
+    # auto: pre-release tags (v1.2.3-rc1 …) are not submitted to winget
+    skip_upload: auto
+    commit_author:
+      name: goreleaser-bot
+      email: bot@goreleaser.com
+    commit_msg_template: "New version: {{ .PackageIdentifier }} version {{ .Version }}"
+    repository:
+      owner: IngSquared99
+      name: winget-pkgs
+      branch: "agsy-{{ .Version }}"
+      token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
+      pull_request:
+        enabled: true
+        draft: false
+        base:
+          owner: microsoft
+          name: winget-pkgs
+          branch: master

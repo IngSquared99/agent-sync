@@ -108,7 +108,7 @@ agsy promote skills/code-review --to ./repo-ai-lib
 
 ### Q18：Windows 需要系統管理員權限或開發人員模式嗎？
 
-不需要。Windows 上 agsy 用 **junction**（目錄重新解析點）而不是 symlink，一般使用者帳號就能建立。安裝腳本也只動使用者範圍的設定。唯一注意：junction 存的是**絕對路徑**，把專案整個搬到別的位置後要重跑 `agsy apply` 重建連結（macOS / Linux 用相對 symlink，搬移不受影響）。
+不需要。Windows 上 agsy 用 **junction**（目錄重新解析點）而不是 symlink，一般使用者帳號就能建立。唯一注意：junction 存的是**絕對路徑**，把專案整個搬到別的位置後要重跑 `agsy apply` 重建連結（macOS / Linux 用相對 symlink，搬移不受影響）。
 
 ### Q19：換了一台電腦（或共用庫還沒 clone），status 冒出一堆警告？
 
@@ -130,7 +130,7 @@ agsy promote skills/code-review --to ./repo-ai-lib
 
 1. 各專案跑 `agsy clean`（刪連結與 `.agsy/`；只刪 agsy 自己建的東西，真實檔案一律跳過並回報）。
 2. 不需要的話刪掉 `agsy.yaml`。
-3. 刪執行檔（macOS/Linux：`/usr/local/bin/agsy`；Windows：`%LOCALAPPDATA%\Programs\agsy` 並清 PATH）。
+3. 刪執行檔，依當初的安裝方式：`brew uninstall agsy`／`winget uninstall IngSquared99.agsy`／Go 安裝的刪 `~/go/bin/agsy`。
 
 ### Q23：status 說有「孤兒連結」（orphan）是什麼意思？
 

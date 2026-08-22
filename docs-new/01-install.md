@@ -1,100 +1,116 @@
 # A. 安裝說明
 
-agsy 是單一執行檔（Go 編譯），沒有其他相依套件。支援 macOS（Intel / Apple Silicon）、Linux（x64 / arm64）、Windows（x64 / arm64）。
+依你的作業系統選一種方式，都是一行指令：
 
-## A-1. macOS / Linux：一行安裝（建議）
+| 方式 | 平台 | 指令 | 事前需要 |
+|------|------|------|----------|
+| 方式一：Homebrew | macOS | `brew install ingsquared99/tap/agsy` | 已裝 Homebrew |
+| 方式二：winget | Windows 10 / 11 | `winget install IngSquared99.agsy` | 不用，系統內建 |
+| 方式三：Go 原始碼 | 全平台（Linux 請走這條） | `go install …`（見 A-3） | 已裝 Go |
+
+**安全性說明**：方式一、二安裝的是 GitHub Release 上的預編譯執行檔——由公開的 CI 流程從公開原始碼自動編譯，且 brew 的 cask 與 winget 的 manifest 都寫死了對應檔案的 SHA-256 校驗碼，下載內容可驗證、可稽核。方式三則是直接抓原始碼在你自己的電腦上編譯，完全不經過預編譯檔。agsy 本身**零第三方相依套件**（只用 Go 標準函式庫）。
+
+## A-1. 方式一：Homebrew（macOS）
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/IngSquared99/agent-sync/main/install.sh | sh
+brew install ingsquared99/tap/agsy
 ```
 
-安裝腳本會做的事：
+- brew 會從 GitHub Release 下載對應你機器（Apple Silicon / Intel）的執行檔並校驗。
+- 安裝過程已處理 macOS 的隔離屬性，第一次執行**不會**跳「無法驗證開發者」的警告。
+- 還沒裝過 Homebrew？到官網 <https://brew.sh> 照首頁指示安裝（macOS 開發者的標準配備，裝一次終身受用）。
 
-1. 偵測作業系統與 CPU 架構，決定要下載哪個 release 壓縮檔。
-2. 從 GitHub Releases 下載壓縮檔與 `checksums.txt`。
-3. **驗證 SHA-256 檢查碼**（防止下載過程損毀或被竄改）。
-4. 把 `agsy` 執行檔安裝到 `/usr/local/bin`（若該目錄不可寫，會透過 `sudo` 安裝，此時可能要求輸入密碼）。
-
-### 可用的環境變數
-
-| 變數 | 作用 |
-|------|------|
-| `AGSY_INSTALL_DIR` | 改變安裝目錄（預設 `/usr/local/bin`）。例：`AGSY_INSTALL_DIR=~/.local/bin curl -fsSL … \| sh` |
-| `AGSY_DRYRUN=1` | 只印出「會下載什麼、會裝到哪」，不實際下載安裝。想先確認行為時很好用 |
-
-## A-2. Windows：PowerShell 一行安裝
+## A-2. 方式二：winget（Windows）
 
 ```powershell
-irm https://raw.githubusercontent.com/IngSquared99/agent-sync/main/install.ps1 | iex
+winget install IngSquared99.agsy
 ```
 
-- 安裝到 `%LOCALAPPDATA%\Programs\agsy`，並自動加入**使用者層級**的 PATH。
-- **不需要系統管理員權限**，全程只動使用者範圍的設定。
-- 一樣會驗證 SHA-256 檢查碼。
-- 安裝完請**開一個新的終端機視窗**再執行 `agsy version`（PATH 變更對已開啟的視窗不生效）。
+- winget 是 Windows 10 / 11 **內建**的官方套件管理器，不用先裝任何東西，開終端機（PowerShell 或 cmd）直接打即可。
+- 裝完重開一個新的終端機視窗，再執行 `agsy version` 確認。
 
-## A-3. 手動下載
+## A-3. 方式三：從原始碼建置（全平台；Linux 請走這條）
 
-到 GitHub Releases 頁面（`https://github.com/IngSquared99/agent-sync/releases/latest`）下載對應平台的檔案：
+需要 **Go 1.22 以上**（建議最新穩定版）。還沒有 Go：macOS `brew install go`、Windows `winget install GoLang.Go`、Linux 用發行版套件（如 `apt install golang-go`）或官網 <https://go.dev/dl/>。
 
-| 平台 | 檔名 |
-|------|------|
-| macOS Apple Silicon（M 系列） | `agsy_mac_apple_silicon.tar.gz` |
-| macOS Intel | `agsy_mac_intel.tar.gz` |
-| Linux x64 | `agsy_linux_x64.tar.gz` |
-| Linux arm64 | `agsy_linux_arm64.tar.gz` |
-| Windows x64 | `agsy_windows_x64.zip` |
-| Windows arm64 | `agsy_windows_arm64.zip` |
-
-解壓縮後把 `agsy`（Windows 為 `agsy.exe`）放進任一在 PATH 裡的目錄即可。建議同時下載 `checksums.txt` 核對檢查碼。
-
-## A-4. 從原始碼建置
-
-需要 Go 1.22 以上：
-
-```sh
-git clone https://github.com/IngSquared99/agent-sync.git
-cd agent-sync
-go build -o agsy ./cmd/agsy
-```
-
-或直接：
+**快速版**——一行指令，Go 工具鏈自動抓原始碼、本機編譯、裝進 `~/go/bin/`：
 
 ```sh
 go install github.com/IngSquared99/agent-sync/cmd/agsy@latest
 ```
 
-> 自行建置的版本 `agsy version` 會顯示 `dev`（正式版號是 release 流程注入的），功能不受影響。
+裝完若終端機找不到 `agsy`，是 `~/go/bin` 不在 PATH（PATH＝終端機尋找指令的目錄清單）：
 
-## A-5. 驗證安裝
+```sh
+# macOS（預設 zsh）：加入設定檔後重開終端機；Linux（bash）改寫進 ~/.bashrc
+echo 'export PATH="$HOME/go/bin:$PATH"' >> ~/.zshrc
+```
+
+**完整版**——適合想先檢視程式碼、或打算修改程式的人（另需 Git）：
+
+```sh
+git clone https://github.com/IngSquared99/agent-sync.git
+cd agent-sync
+go test ./...                # （可選）先跑測試確認環境正常
+go build -o agsy ./cmd/agsy  # 產出 agsy 執行檔（Windows 為 agsy.exe）
+mv agsy ~/go/bin/            # 放進任一在 PATH 裡的目錄
+```
+
+沒有其他框架或函式庫需求——不用 npm、不用 pip，`go build` 一行就是全部。
+
+## A-4. 驗證安裝
 
 ```sh
 agsy version
 # 例：agsy v1.2.3 (commit abc1234, built 2026-…, go1.22.x, darwin/arm64)
 ```
 
-接著可以在任一專案跑一次環境檢查（唯讀、不會做任何動作）：
+有印出版本資訊就是裝好了。接著可以在任一專案跑一次環境健檢（唯讀、不會做任何動作）：
 
 ```sh
 agsy doctor
 ```
 
-## A-6. 介面語言
+## A-5. 介面語言：中文／英文怎麼決定
 
-agsy 內建繁體中文介面，依環境變數自動偵測：
+agsy 內建繁體中文與英文兩種介面，**不用設定就會自動判斷**。它啟動時依序檢查三個「環境變數」（環境變數＝作業系統層級的設定值，終端機裡的程式都讀得到），找到第一個有值的就用它：
 
-- 判斷順序：`AGSY_LANG` → `LC_ALL` → `LANG`；值以 `zh` 開頭就用繁體中文，其餘為英文。
-- 想強制中文：`export AGSY_LANG=zh-TW`；想強制英文：`export AGSY_LANG=en`。
+```
+ AGSY_LANG 有值嗎？ ──有──▶ 用它判斷
+     │ 沒有
+     ▼
+ LC_ALL 有值嗎？    ──有──▶ 用它判斷
+     │ 沒有
+     ▼
+ LANG 有值嗎？      ──有──▶ 用它判斷
+     │ 沒有
+     ▼
+   英文
+```
 
-## A-7. 升級
+判斷規則只有一條：**值以 `zh` 開頭（例如 `zh_TW.UTF-8`、`zh-TW`）→ 繁體中文；其他任何值 → 英文。**
 
-重跑一次安裝指令即可（腳本永遠抓 `releases/latest`，會直接覆蓋舊執行檔）。
+三個變數的分工：
 
-## A-8. 移除
+- `LC_ALL`、`LANG`：**作業系統本來就有的**語言設定，不是 agsy 的東西。台灣的 macOS / Linux 通常已經是 `zh_TW.UTF-8`，所以什麼都不用做，agsy 一開就是中文。
+- `AGSY_LANG`：**agsy 專屬的開關**，優先權最高，用來蓋過系統設定（例如系統是英文但你想看中文介面）。
 
-1. 在每個用過 agsy 的專案裡先跑 `agsy clean`（移除掛載連結與 `.agsy/` 產物；`agsy.yaml` 會保留，不需要的話手動刪除）。
-2. 刪掉執行檔：
-   - macOS / Linux：`sudo rm /usr/local/bin/agsy`（或你自訂的安裝目錄）
-   - Windows：刪除 `%LOCALAPPDATA%\Programs\agsy` 資料夾，並自 PATH 移除該項目。
+想手動指定語言：
+
+```sh
+export AGSY_LANG=zh-TW    # 這個終端機視窗內，強制中文
+export AGSY_LANG=en       # 強制英文
+```
+
+`export` 只對目前這個終端機視窗有效；想永久生效，把那一行加進 shell 設定檔（macOS 預設 zsh → `~/.zshrc`），重開終端機後生效。
+
+## A-6. 升級與移除
+
+| | 方式一 Homebrew | 方式二 winget | 方式三 Go |
+|---|---|---|---|
+| 升級 | `brew upgrade agsy` | `winget upgrade IngSquared99.agsy` | 重跑一次 `go install …@latest` |
+| 移除執行檔 | `brew uninstall agsy` | `winget uninstall IngSquared99.agsy` | 刪 `~/go/bin/agsy` |
+
+移除前記得先在每個用過 agsy 的專案裡跑 `agsy clean`（移除掛載連結與 `.agsy/` 產物；`agsy.yaml` 會保留，不需要的話手動刪除）。
 
 → 下一章：[快速上手](02-quickstart.md)

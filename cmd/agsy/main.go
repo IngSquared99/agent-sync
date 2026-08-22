@@ -8,6 +8,7 @@ import (
 	"github.com/IngSquared99/agent-sync/adapters"
 	"os"
 	"runtime"
+	"runtime/debug"
 	"sort"
 	"strings"
 
@@ -23,6 +24,37 @@ var (
 	commit  = "none"
 	date    = "unknown"
 )
+
+// resolveVersion returns version/commit/date, falling back to the module's
+// build info when the ldflags injection didn't run — `go install …@vX.Y.Z`
+// carries the module version, a plain `go build` in a checkout carries the
+// vcs revision. Without this, every non-release build reports only "dev".
+func resolveVersion() (v, c, d string) {
+	v, c, d = version, commit, date
+	if v != "dev" {
+		return
+	}
+	bi, ok := debug.ReadBuildInfo()
+	if !ok {
+		return
+	}
+	if mv := bi.Main.Version; mv != "" && mv != "(devel)" {
+		v = mv
+	}
+	for _, s := range bi.Settings {
+		switch s.Key {
+		case "vcs.revision":
+			if len(s.Value) > 7 {
+				c = s.Value[:7]
+			} else if s.Value != "" {
+				c = s.Value
+			}
+		case "vcs.time":
+			d = s.Value
+		}
+	}
+	return
+}
 
 // Adapter is a vendor mount preset (factory template for init, not a runtime dependency)
 type Adapter struct {
@@ -99,8 +131,9 @@ func run() int {
 	case "doctor":
 		code = cmdDoctor()
 	case "version", "--version", "-v":
+		v, c, d := resolveVersion()
 		fmt.Printf("agsy %s (commit %s, built %s, %s, %s/%s)\n",
-			version, commit, date, runtime.Version(), runtime.GOOS, runtime.GOARCH)
+			v, c, d, runtime.Version(), runtime.GOOS, runtime.GOARCH)
 	case "help", "--help", "-h":
 		printHelp()
 	default:

@@ -171,7 +171,8 @@ func cmdDoctor() int {
 // cmdMenu is the interactive menu behind the dual entry point (§7).
 // Guides the user into init when no config file is found (§12-18).
 func cmdMenu() int {
-	fmt.Printf("agsy %s\n\n", version)
+	v, _, _ := resolveVersion()
+	fmt.Printf("agsy %s\n\n", v)
 	wd, _ := os.Getwd()
 	if _, ok := config.FindUp(wd); !ok {
 		fmt.Printf(i18n.T("⚠ %s not found; looks like the first use in this project\n"), config.FileName)

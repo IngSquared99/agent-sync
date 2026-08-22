@@ -8,7 +8,7 @@
 | 章節 | 檔案 | 內容 |
 |------|------|------|
 | 0. 核心概念 | [00-overview.md](00-overview.md) | agsy 是什麼、解決什麼問題、三層架構與資料流 |
-| A. 安裝說明 | [01-install.md](01-install.md) | macOS / Linux / Windows 安裝、驗證、升級、移除 |
+| A. 安裝說明 | [01-install.md](01-install.md) | Homebrew／winget 一行安裝、原始碼建置、介面語言 |
 | B. 快速上手 | [02-quickstart.md](02-quickstart.md) | 四步完成第一次同步（附 CLI 畫面示意）、指令速查表 |
 | C-1. 設定檔 | [03-config.md](03-config.md) | agsy.yaml 每個欄位的完整說明與安全規則 |
 | C-2. 指令說明 | [04-commands.md](04-commands.md) | 指令總覽 + 各指令細節與使用情境 |
