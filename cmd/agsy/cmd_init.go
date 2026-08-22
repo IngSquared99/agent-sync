@@ -13,14 +13,14 @@ import (
 )
 
 // cmdInit interactively generates agsy.yaml.
-// If it already exists, enter edit mode (§12-7): load the existing config as
+// If it already exists, enter edit mode: load the existing config as
 // defaults so pressing Enter keeps current values, and show a diff for
 // confirmation before writing. yaml comments get replaced with template
 // comments during regeneration — that risk is covered by keeping agsy.yaml in
 // version control, and the pre-write diff is the last manual checkpoint.
 func cmdInit(argSources []string) int {
-	// Non-interactive gate (§12-19): conflict strategies require an explicit
-	// choice (§12-1). Without a TTY and without --yes the run is cancelled;
+	// Non-interactive gate: conflict strategies require an explicit
+	// choice. Without a TTY and without --yes the run is cancelled;
 	// --yes is the explicit consent to the recommended defaults.
 	if !prompt.IsStdinTTY() && !prompt.AssumeYes {
 		fmt.Println(i18n.T("✘ init requires interactive prompts (the same-name strategy must be chosen by you explicitly)."))
@@ -125,7 +125,7 @@ func cmdInit(argSources []string) int {
 		}
 	}
 
-	// ── The three mandatory on_conflict questions (§12-1) ──
+	// ── The three mandatory on_conflict questions ──
 	strategies := map[string]string{}
 	opts := []string{
 		i18n.T("rename   keep both copies, tagging filenames with their source"),

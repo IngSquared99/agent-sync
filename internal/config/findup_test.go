@@ -6,9 +6,9 @@ import (
 	"testing"
 )
 
-// FindUp: §4 guarantees relative paths are resolved against the config file's
-// directory — for that guarantee to mean anything, running from a project
-// subdirectory must still find the project root's config (same convention as git).
+// FindUp: relative paths resolve against the config file's directory, so
+// running from a project subdirectory must still find the project root's
+// config (same convention as git).
 func TestFindUpFromSubdir(t *testing.T) {
 	root := t.TempDir()
 	if err := os.WriteFile(filepath.Join(root, FileName), []byte("version: 1\n"), 0o644); err != nil {

@@ -12,7 +12,7 @@ import (
 	"github.com/IngSquared99/agent-sync/internal/state"
 )
 
-// cmdStatus prints the full report plus an action menu at the bottom (§12-12).
+// cmdStatus prints the full report plus an action menu at the bottom.
 // The body is always read-only; the menu only jumps into the existing
 // promote / apply flows.
 // Non-TTY (CI / git hook): print the report only, exit 0=in sync 1=gaps found.

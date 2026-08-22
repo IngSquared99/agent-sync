@@ -13,7 +13,7 @@ import (
 
 // Windows uses junctions (directory reparse points) instead of symlinks:
 // creating one requires no privileges — a regular user account without
-// Developer Mode is enough (§12-13).
+// Developer Mode is enough.
 // Junctions can only store absolute paths; after moving the project, rerun
 // agsy apply to rebuild them.
 

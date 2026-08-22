@@ -10,7 +10,7 @@ import (
 )
 
 // cmdPlan rehearses everything apply would do, without writing anything.
-// Missing sources: skipping is fine, staying silent is not (§12-9). Same for
+// Missing sources: skipping is fine, staying silent is not. Same for
 // files that cannot be included.
 func cmdPlan() int {
 	cfg, err := loadConfig()

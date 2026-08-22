@@ -15,7 +15,7 @@ import (
 	"github.com/IngSquared99/agent-sync/internal/state"
 )
 
-// cmdClean uninstalls (§12-11): removes links and build outputs, leaving only agsy.yaml.
+// cmdClean uninstalls: removes links and build outputs, leaving only agsy.yaml.
 // Only deletes what the tool created: links and outputs are removable; real paths are skipped and reported.
 func cmdClean() int {
 	cfg, err := loadConfig()
@@ -61,7 +61,7 @@ func cmdClean() int {
 	return 0
 }
 
-// cmdDoctor runs a read-only environment health check; it performs no actions (§12-8).
+// cmdDoctor runs a read-only environment health check; it performs no actions.
 // ✔ / ⚠ / ✘ are strictly distinguished: a source lacking a category subdirectory is
 // normal (⚠); only a source missing entirely is an error (✘).
 func cmdDoctor() int {
@@ -106,7 +106,7 @@ func cmdDoctor() int {
 				continue
 			}
 			// The count must follow the same inclusion rules as build so the
-			// reported numbers match what a build would collect (§12-8)
+			// reported numbers match what a build would collect
 			n := 0
 			var ignored []string
 			for _, e := range entries {
@@ -167,8 +167,8 @@ func cmdDoctor() int {
 	return 0
 }
 
-// cmdMenu is the interactive menu behind the dual entry point (§7).
-// Guides the user into init when no config file is found (§12-18).
+// cmdMenu is the interactive menu behind the dual entry point.
+// Guides the user into init when no config file is found.
 func cmdMenu() int {
 	v, _, _ := resolveVersion()
 	fmt.Printf("agsy %s\n\n", v)

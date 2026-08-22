@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 )
 
-// linkDir on non-Windows: relative-path symlink (not tied to one machine, §6)
+// linkDir on non-Windows: relative-path symlink (not tied to one machine)
 func linkDir(absTarget, linkPath string) error {
 	rel, err := filepath.Rel(filepath.Dir(linkPath), absTarget)
 	if err != nil {

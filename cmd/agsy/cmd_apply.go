@@ -11,7 +11,7 @@ import (
 	"github.com/IngSquared99/agent-sync/internal/state"
 )
 
-// cmdApply is the commit flow (§12):
+// cmdApply is the commit flow:
 // pre-checks → confirm local changes (status detection logic) → clear artifacts (shares deletion logic with clean) → build → mount
 // The order is fixed: clearing before checking would make the check meaningless.
 func cmdApply() int {
@@ -20,7 +20,7 @@ func cmdApply() int {
 		return errExit(err)
 	}
 
-	// Pre-check: all sources must exist (plan may run incomplete, apply must not, §12-9)
+	// Pre-check: all sources must exist (plan may run incomplete, apply must not)
 	sources, err := build.ExpandSources(cfg)
 	if err != nil {
 		return errExit(err)
@@ -39,7 +39,7 @@ func cmdApply() int {
 		return 1
 	}
 
-	// Pre-check: mount targets occupied by real files (§12-10).
+	// Pre-check: mount targets occupied by real files.
 	// Detectable before build; surfacing it only at the mount stage would
 	// discard local changes and spend a full rebuild on a run that cannot
 	// complete.
@@ -94,7 +94,7 @@ func cmdApply() int {
 		return 1
 	}
 
-	// Confirm local changes (forced on every run, §12-3).
+	// Confirm local changes (forced on every run).
 	// Three cases must be kept apart:
 	//   manifest readable → compare item by item, ask only if something changed
 	//   manifest unreadable but the artifact dir still exists → whether corrupted or deleted,

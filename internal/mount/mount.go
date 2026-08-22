@@ -1,8 +1,8 @@
 // Package mount implements the mount phase: creating a directory link for
 // every link of every mount entry.
 // Non-Windows uses relative-path symlinks; Windows uses junctions (no
-// privileges needed, §12-13).
-// Existing-path rules (§12-10): links are always deleted and recreated; real
+// privileges needed).
+// Existing-path rules: links are always deleted and recreated; real
 // directories/files raise an error and are never deleted.
 package mount
 
@@ -40,7 +40,7 @@ type LinkPlan struct {
 // Inspect reports the current state of every mount target (shared by
 // plan / status / doctor, read-only).
 // A link pointing elsewhere, or whose target no longer exists, is effectively
-// unmounted; these states are reported separately (§12-12).
+// unmounted; these states are reported separately.
 func Inspect(cfg *config.Config) ([]LinkPlan, error) {
 	out := cfg.OutDir()
 	var plans []LinkPlan

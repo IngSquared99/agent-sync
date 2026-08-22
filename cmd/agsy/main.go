@@ -1,6 +1,6 @@
 // agent-sync (agsy): merges AI instruction files from multiple sources into a
 // single build artifact, then mounts it into each tool.
-// Dual entry: no args → interactive menu; with args → direct execution (§7).
+// Dual entry: no args → interactive menu; with args → direct execution.
 package main
 
 import (
@@ -91,7 +91,7 @@ func loadAdapters() ([]Adapter, error) {
 func main() {
 	code := run()
 	// When launched by double-click on Windows, pause here — otherwise the
-	// window closes before the result can be seen (§9)
+	// window closes before the result can be seen
 	prompt.PauseIfDoubleClicked()
 	os.Exit(code)
 }

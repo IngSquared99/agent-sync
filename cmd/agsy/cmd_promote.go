@@ -13,7 +13,7 @@ import (
 	"github.com/IngSquared99/agent-sync/internal/state"
 )
 
-// cmdPromote writes changes made in the build output back to the sources (§12-4):
+// cmdPromote writes changes made in the build output back to the sources:
 //
 //	agsy promote                 interactive multi-select, per-item target override
 //	agsy promote --all           write back everything, each to its original source; list first, then confirm
@@ -115,7 +115,7 @@ func outsideProject(cfg *config.Config, p string) bool {
 }
 
 func promoteAll(cfg *config.Config, out string, m *build.Manifest, locals []state.LocalChange) int {
-	// Group by original source and list everything before acting (§12-4).
+	// Group by original source and list everything before acting.
 	// Source roots always come from prefix-matching against sources, never
 	// from counting path segments upward.
 	groups := map[string][]state.LocalChange{}
@@ -318,7 +318,7 @@ func promoteOne(cfg *config.Config, out string, m *build.Manifest, lc state.Loca
 	}
 	// For a skill renamed in the output, the front-matter name is the
 	// build-rewritten, output-only name. Writing it back verbatim would leak a
-	// name like python-style-fromlib-lib — valid only in the output — into the source (§12-2).
+	// name like python-style-fromlib-lib — valid only in the output — into the source.
 	if it.Renamed && it.Category == "skills" {
 		origName := it.Original
 		if err := build.RewriteSkillName(filepath.Join(dest, "SKILL.md"), origName); err != nil {

@@ -49,7 +49,7 @@ func newProject(t *testing.T) string {
 }
 
 // init's guard rails when non-interactive (go test's stdin is not a terminal)
-// and the --yes authorization (§12-19).
+// and the --yes authorization.
 func TestInitThenApplyThenClean(t *testing.T) {
 	proj := newProject(t)
 	chdir(t, proj)

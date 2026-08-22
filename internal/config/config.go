@@ -70,7 +70,7 @@ func Find(dir string) (string, bool) {
 }
 
 // FindUp walks up from dir looking for agsy.yaml (same convention as git).
-// §4 resolves relative paths against the config file's directory, so the
+// Relative paths resolve against the config file's directory, so the
 // config must also be findable from project subdirectories.
 func FindUp(dir string) (string, bool) {
 	for {
@@ -152,7 +152,7 @@ func (c *Config) validate() error {
 		errs = append(errs, i18n.T("sources is not set; at least one source path is required"))
 	}
 	// on_conflict is required per category: the user must make an explicit choice;
-	// a missing field never silently falls back to a default (§12-1)
+	// a missing field never silently falls back to a default
 	for _, cat := range CategoryOrder {
 		s, ok := c.Build.OnConflict[cat]
 		if !ok || s == "" {
@@ -198,7 +198,7 @@ func (c *Config) validate() error {
 	return nil
 }
 
-// validateOut rejects build.out values that would destroy data (§12-5).
+// validateOut rejects build.out values that would destroy data.
 // The whole out directory is emptied by apply and removed by clean, so it may
 // only be a dedicated directory inside the project.
 func (c *Config) validateOut() []string {
@@ -244,7 +244,7 @@ func (c *Config) validateOut() []string {
 }
 
 // validateMount cross-checks that every path mount.links points at will actually
-// be produced by build (§12-14)
+// be produced by build
 func (c *Config) validateMount() []string {
 	var errs []string
 	// top-level output directory name → category
@@ -323,7 +323,7 @@ func (c *Config) validateMount() []string {
 	return errs
 }
 
-// ExpandPath resolves a path written in one of three forms (§4):
+// ExpandPath resolves a path written in one of three forms:
 // leading ~ → the user's home directory; relative → based on the directory
 // containing agsy.yaml; absolute → as-is
 func (c *Config) ExpandPath(p string) (string, error) {
@@ -341,7 +341,7 @@ func (c *Config) ExpandPath(p string) (string, error) {
 }
 
 // OutDir returns the absolute path of the build output directory (hard-coding
-// .agsy is forbidden; always obtain it here, §12-5)
+// .agsy is forbidden; always obtain it here)
 func (c *Config) OutDir() string {
 	p, _ := c.ExpandPath(c.Build.Out)
 	return p
@@ -362,7 +362,7 @@ func (c *Config) SourceRoots() []string {
 
 // SourceRootOf finds which source root a path belongs to by longest-prefix
 // match; prefix matching stays correct when categories.from is a nested
-// path (§12-4).
+// path.
 func (c *Config) SourceRootOf(path string) (string, bool) {
 	best, ok := "", false
 	for _, root := range c.SourceRoots() {
@@ -388,7 +388,7 @@ func IsAncestor(a, b string) bool {
 }
 
 // SourceTag takes the last segment of a source path with any leading dots removed,
-// as the candidate rename tag (§12-2).
+// as the candidate rename tag.
 // When several sources share the candidate, build.AssignTags disambiguates further.
 func SourceTag(srcPath string) string {
 	base := filepath.Base(filepath.Clean(srcPath))

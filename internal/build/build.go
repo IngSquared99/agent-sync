@@ -18,7 +18,7 @@ import (
 	"github.com/IngSquared99/agent-sync/internal/yaml"
 )
 
-// Item is one entry of the candidate list (§5): in-memory intermediate data of the build
+// Item is one entry of the candidate list: in-memory intermediate data of the build
 type Item struct {
 	Category  string   // rules / skills / workflows
 	Name      string   // original file or directory name
@@ -32,7 +32,7 @@ type Item struct {
 	RouteNote string   // routing note (e.g. "no target specified, default applied")
 }
 
-// Ignored is a file skipped during scanning (§12-8): not an error, but it must be
+// Ignored is a file skipped during scanning: not an error, but it must be
 // reported — silent discarding is not allowed
 type Ignored struct {
 	Category string
@@ -42,7 +42,7 @@ type Ignored struct {
 }
 
 // ManifestName is the manifest file name (located under build.out).
-// Note: the "no hard-coded .agsy" rule of §12-5 is about *paths* — paths are always
+// Note: the "no hard-coded .agsy" rule is about *paths* — paths are always
 // derived from build.out. The .agsy- here is only a file-name prefix (it stays in the
 // right place even if the output directory is renamed), a deliberate exception.
 const ManifestName = ".agsy-manifest.json"
@@ -96,7 +96,7 @@ type Conflict struct {
 }
 
 // Collision means rename / a naming coincidence made two *final output names* collide.
-// Silently overwriting would destroy one of the copies, so it is always blocked (§12-2).
+// Silently overwriting would destroy one of the copies, so it is always blocked.
 type Collision struct {
 	Category string
 	OutName  string
@@ -117,7 +117,7 @@ type Plan struct {
 	Incomplete  bool        // some source does not exist; the preview is incomplete
 }
 
-// Accepts is the single source of truth for the acceptance rules (§12-8).
+// Accepts is the single source of truth for the acceptance rules.
 // The build scan and the doctor stats share the same judgment so their numbers
 // can never disagree.
 // It takes a path rather than a file name: skills need a peek into the directory
@@ -179,7 +179,7 @@ func ExpandSources(cfg *config.Config) ([]SourceState, error) {
 	return out, nil
 }
 
-// AssignTags assigns unique source tags (§12-2).
+// AssignTags assigns unique source tags.
 // Start with the last path segment; when several sources clash (~/x/.flow and
 // ./.flow are both "flow") merge in parent directory names level by level, and
 // only fall back to appending a number if they are still identical. If tags are
@@ -338,7 +338,7 @@ func resolveConflicts(cfg *config.Config, p *Plan) error {
 				}
 			}
 		case "rename":
-			// both sides of the conflict get a source tag (§12-2)
+			// both sides of the conflict get a source tag
 			for _, j := range idxs {
 				handled[j] = true
 				x := p.Items[j]
@@ -497,7 +497,7 @@ func routeWorkflows(cfg *config.Config, p *Plan) error {
 			}
 		}
 		if len(targets) == 0 {
-			// not specified → apply route.default (§12-6)
+			// not specified → apply route.default
 			if len(cfg.Build.Route.Default) == 0 {
 				p.NoBucket = append(p.NoBucket, it.OutName)
 				it.RouteNote = fmt.Sprintf(i18n.T("no %s specified and default is empty → not placed, warning issued"), field)
@@ -594,7 +594,7 @@ func Execute(cfg *config.Config, p *Plan) (*Manifest, error) {
 				if err := copyDir(it.From, dst); err != nil {
 					return nil, err
 				}
-				// when skills use rename, also rewrite the front-matter name (§12-2)
+				// when skills use rename, also rewrite the front-matter name
 				if it.Renamed && it.Category == "skills" {
 					if err := RewriteSkillName(filepath.Join(dst, "SKILL.md"), it.OutName); err != nil {
 						return nil, err
@@ -635,7 +635,7 @@ func Execute(cfg *config.Config, p *Plan) (*Manifest, error) {
 	return m, nil
 }
 
-// EnsureLinkTargets creates the target directory for every mount.links entry (§12-14)
+// EnsureLinkTargets creates the target directory for every mount.links entry
 func EnsureLinkTargets(cfg *config.Config) error {
 	out := cfg.OutDir()
 	for _, m := range cfg.Mount {
@@ -649,7 +649,7 @@ func EnsureLinkTargets(cfg *config.Config) error {
 	return nil
 }
 
-// RemoveOut deletes the build output directory (shared by apply's cleanup and clean, §12-11).
+// RemoveOut deletes the build output directory (shared by apply's cleanup and clean).
 // Dangerous paths were already rejected at config load; this is the second line of
 // defense: even a weird cfg from the caller cannot cause a wrong deletion.
 func RemoveOut(cfg *config.Config) error {
@@ -874,7 +874,7 @@ func copyDir(src, dst string) error {
 // RewriteSkillName rewrites the name in SKILL.md front-matter to the given name.
 // build uses it to apply the source tag; promote uses it to restore the original
 // name so a name that only belongs to the output is never written back to the
-// source (§12-2, §12-4).
+// source.
 func RewriteSkillName(skillMD, newName string) error {
 	raw, err := os.ReadFile(skillMD)
 	if err != nil {

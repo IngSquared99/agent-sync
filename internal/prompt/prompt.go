@@ -20,7 +20,7 @@ var reader = bufio.NewReader(os.Stdin)
 // you can put in the docs.
 var AssumeYes bool
 
-// IsTTY reports whether stdout is a terminal (when it is not, status prints no menu, §12-12).
+// IsTTY reports whether stdout is a terminal (when it is not, status prints no menu).
 // Uses a real isatty (see tty_*.go), not ModeCharDevice — /dev/null is a character device too.
 func IsTTY() bool {
 	return isTerminal(os.Stdout)
@@ -177,7 +177,7 @@ func Pause() {
 }
 
 // PauseIfDoubleClicked keeps the console from vanishing in the Windows
-// double-click scenario (§9). It only pauses when the console was opened
+// double-click scenario. It only pauses when the console was opened
 // just for this program: when run from an existing terminal or CI, an
 // extra Enter press would only be an annoyance.
 func PauseIfDoubleClicked() {
