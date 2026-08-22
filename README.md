@@ -13,6 +13,8 @@
 
 ## A. Core Concepts: What is agsy?
 
+<br>
+
 ### The problem it solves
 
 When you use several AI development tools at once (Claude Code, OpenAI Codex, Antigravity…), each tool reads its own instruction directory:
@@ -28,6 +30,8 @@ The same coding conventions, skills, and workflows end up copied several times, 
 > It **merges** instruction files from multiple sources into a single build output directory (`.agsy/` by default), then **mounts** it into each tool's read location via directory links.
 
 Edit only the sources, run `agsy apply` once, and every tool updates at the same time.
+
+<br>
 
 ### Know these terms first
 
@@ -51,6 +55,8 @@ The rest of the documentation uses these terms throughout. Skim them now; come b
 | orphan (orphan link) | A link created by an earlier `apply` that the current config no longer references |
 
 > **Two ends and a channel**: file content lives at exactly two ends — the "**source end**" (originals inside sources) and the "**artifact end**" (copies inside `.agsy/`). Mounts are links: a file opened through a tool directory (`.claude/` etc.) *is* the artifact end. The link itself is called the "**mount link**" — a channel that stores no content; see [Scenario Guide "Mount-link scenarios"](https://ingsquared99.github.io/agent-sync/#/en/scenarios) for its failure modes.
+
+<br>
 
 ### The three layers
 
@@ -118,6 +124,8 @@ With ① and ② understood, a fully mounted project looks like this:
 └─────────────────────┘
 ```
 
+<br>
+
 ### The three categories
 
 Instruction files are split into three categories by purpose:
@@ -149,6 +157,8 @@ A typical source:
     └── release.md        (front matter: target: claude)
 ```
 
+<br>
+
 ### Supported tools and their directories
 
 After mounting, where does each category appear for each tool? The built-in adapters currently cover three tools (details and customization in the [Adapters chapter](https://ingsquared99.github.io/agent-sync/#/en/adapters)):
@@ -160,6 +170,8 @@ After mounting, where does each category appear for each tool? The built-in adap
 | Antigravity | `.agents/` | `.agents/rules` | `.agents/skills` | `.agents/workflows` |
 
 Every cell in this table is a **link**; the actual content lives in `.agsy/`. Codex, per its conventions, only reads prompts, so rules and skills have no mount location there (`init` warns about this when only Codex is selected).
+
+<br>
 
 ### Source directories must follow the naming convention
 
@@ -173,6 +185,8 @@ Whether it is a personal shared library (`~/all-ai-lib`) or an in-project one (`
 ```
 
 > If an existing library really uses different names, there is no need to move files: set `build.categories.<category>.from` in `agsy.yaml` to the actual subdirectory name — see the [Configuration chapter](https://ingsquared99.github.io/agent-sync/#/en/config). When unsure whether something is being scanned, `agsy doctor` gives an immediate answer.
+
+<br>
 
 ### Workflow routing: buckets and routing
 
@@ -209,6 +223,8 @@ Release procedure…
 
 **What if `target` is missing?** The workflow falls into the buckets listed in `route.default`. Setting default to "all buckets" is recommended — a file that appears everywhere is easier to reason about than one that silently disappears. Details in the [Configuration](https://ingsquared99.github.io/agent-sync/#/en/config) and [Adapters](https://ingsquared99.github.io/agent-sync/#/en/adapters) chapters.
 
+<br>
+
 ### Two-way data flow: apply and promote
 
 **apply (forward): sources → artifacts.** Normal edits take this path — edit a source, run apply, every tool syncs:
@@ -234,6 +250,8 @@ Release procedure…
 
 agsy records each item's source and artifact hashes at build time in `.agsy/.agsy-manifest.json`, so `status` can tell precisely: which items are "source updated, not yet rebuilt" (behind), which are "artifact edited, not yet written back" (local changes), and whether both sides changed at once (manual merge needed).
 
+<br>
+
 ### Built-in safety rules
 
 These principles appear throughout the documentation:
@@ -243,6 +261,10 @@ These principles appear throughout the documentation:
 3. **Confirmation before deletion**: `apply` wipes the artifact directory; if unpromoted changes are detected it always asks first. Non-interactive runs without `--yes` are cancelled, never forced.
 4. **Artifact directory guard rails**: `build.out` may only be a dedicated directory inside the project; pointing it at the home directory, a source, or the project root is rejected at config validation.
 5. **Symbolic links are never collected**: symlinks in sources (including inside skill directories) are skipped, so a link can never smuggle files from outside a source into the artifacts.
+
+<br>
+
+---
 
 ## B. Installation
 
@@ -256,6 +278,8 @@ Pick the method for your operating system — each is a single command:
 
 **Security notes**: methods 1 and 2 install prebuilt binaries from GitHub Releases — compiled from the public source by a public CI pipeline, with the SHA-256 checksum of every file pinned in the Homebrew cask and winget manifest, so downloads are verifiable and auditable. Method 3 compiles the source directly on your machine and involves no prebuilt binary at all. agsy itself has **zero third-party dependencies** (standard library only).
 
+<br>
+
 ### Method 1: Homebrew (macOS)
 
 ```sh
@@ -266,6 +290,8 @@ brew install ingsquared99/tap/agsy
 - The install handles the macOS quarantine attribute, so the first run does **not** trigger the "unverified developer" warning.
 - No Homebrew yet? Follow the instructions at <https://brew.sh> (the standard package manager for macOS developers — install once, use forever).
 
+<br>
+
 ### Method 2: winget (Windows)
 
 ```powershell
@@ -274,6 +300,8 @@ winget install IngSquared99.agsy
 
 - winget is the official package manager **built into** Windows 10 / 11 — nothing to install first; open a terminal (PowerShell or cmd) and run it.
 - Open a **new** terminal window afterwards, then run `agsy version` to confirm.
+
+<br>
 
 ### Method 3: build from source (all platforms; use this on Linux)
 
@@ -305,6 +333,8 @@ mv agsy ~/go/bin/            # put it in any directory on PATH
 
 There are no other framework or library requirements — no npm, no pip; `go build` is all of it.
 
+<br>
+
 ### Verify the installation
 
 ```sh
@@ -317,6 +347,8 @@ Version info printed = installed. You can then run a read-only environment healt
 ```sh
 agsy doctor
 ```
+
+<br>
 
 ### Interface language: how Chinese / English is decided
 
@@ -351,6 +383,8 @@ export AGSY_LANG=en       # force English
 
 `export` affects only the current terminal window; to make it permanent, add the line to your shell config (macOS default zsh → `~/.zshrc`) and open a new terminal.
 
+<br>
+
 ### Upgrade and uninstall
 
 | | Method 1 Homebrew | Method 2 winget | Method 3 Go |
@@ -359,6 +393,10 @@ export AGSY_LANG=en       # force English
 | Remove binary | `brew uninstall agsy` | `winget uninstall IngSquared99.agsy` | delete `~/go/bin/agsy` |
 
 Before uninstalling, run `agsy clean` in every project that used agsy (removes mount links and the `.agsy/` artifacts; `agsy.yaml` is kept — delete it manually if unwanted).
+
+<br>
+
+---
 
 ## C. Quick Start: First Sync in Four Steps
 
@@ -372,6 +410,8 @@ The whole path is four steps, roughly 10 minutes end to end:
 ```
 
 > The terminal screens below are **illustrative** (details may vary by version) — they show what to expect at each step.
+
+<br>
 
 ### Two ways to operate
 
@@ -396,6 +436,8 @@ What would you like to do?
 
 On the first run in a project, with no config file yet, the menu leads you straight into `init`.
 
+<br>
+
 ### Command cheat sheet
 
 | Command | What it does | Writes anything? |
@@ -410,6 +452,8 @@ On the first run in a project, with no config file yet, the menu leads you strai
 | `agsy version` / `agsy help` | version / usage | read-only |
 
 Global flag: `--yes` (`-y`) = answer yes to every confirmation, for CI, scripts, and git hooks. **Without `--yes`, any action needing confirmation in a non-interactive environment is cancelled — never forced.**
+
+<br>
 
 ### Step 0: prepare source directories
 
@@ -438,6 +482,8 @@ Format rules, one line each:
 - `rules/` — single `.md` files
 - `skills/` — a **directory** with a mandatory `SKILL.md` (no symlinks inside)
 - `workflows/` — single `.md` files; optional `target:` front matter for routing
+
+<br>
 
 ### Step 1: `agsy init` — answer five questions
 
@@ -493,6 +539,8 @@ Two closing notes:
 - Answer **y** to the `.gitignore` question — artifacts stay out of version control; `agsy.yaml` itself **should** be committed.
 - Non-interactive environments (CI): `agsy init --yes ~/all-ai-lib ./repo-ai-lib` — sources as arguments, `--yes` = accept the recommended defaults.
 
+<br>
+
 ### Step 2: `agsy plan` — read-only preview, three things to check
 
 `plan` rehearses everything apply would do, **guaranteed to write nothing**:
@@ -536,6 +584,8 @@ Only three places need your attention:
 2. **Any `✘` blocks**: name conflicts, collisions, routing errors — apply refuses while any exist; fix them per the list first.
 3. **The summary line**: conflicts / collisions / mount anomalies all at 0 → safe to continue.
 
+<br>
+
 ### Step 3: `agsy apply` — build and mount for real
 
 ```text
@@ -548,6 +598,8 @@ Two green lines and it is done. Open `.claude/` — `rules`, `skills`, `commands
 
 If it stops midway, a protection fired: a missing source path, a mount point occupied by a real directory, or unpromoted local changes (listed, with a discard confirmation). Handle per the message and rerun; details in the [command reference](https://ingsquared99.github.io/agent-sync/#/en/commands).
 
+<br>
+
 ### The daily loop: three lines
 
 ```
@@ -557,6 +609,8 @@ If it stops midway, a protection fired: a missing source path, a mount point occ
 ```
 
 **One mental model**: sources are the single source of truth. Normal changes go into sources + `apply`; anything edited on the artifact end (accidentally or via an AI tool) gets collected back with `promote`.
+
+<br>
 
 ### In CI / git hooks
 
@@ -569,6 +623,10 @@ agsy status || { echo "agsy out of sync — run agsy apply first"; exit 1; }
 # rebuild inside CI (non-interactive, accept all confirmations)
 agsy apply --yes
 ```
+
+<br>
+
+---
 
 ## D. Going deeper
 

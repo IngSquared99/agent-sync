@@ -13,6 +13,8 @@
 
 ## A. 核心概念：agsy 是什麼？
 
+<br>
+
 ### 它解決的問題
 
 當你同時使用多個 AI 開發工具（Claude Code、OpenAI Codex、Antigravity…），每個工具都有自己的指令檔目錄：
@@ -28,6 +30,8 @@
 > 把多個來源（sources）的指令檔，**合併建置**成單一產物目錄（預設 `.agsy/`），再用**目錄連結**掛載進每個工具的讀取位置。
 
 改動時只改來源，跑一次 `agsy apply`，所有工具同時更新。
+
+<br>
 
 ### 開始前，先認識幾個名詞
 
@@ -51,6 +55,8 @@
 | orphan（孤兒連結） | 之前的 `apply` 建立、但現在設定已不再引用的連結 |
 
 > **兩端與通道**：檔案內容只存在於兩端——「**來源端**」＝ sources 裡的原始檔、「**產物端**」＝ `.agsy/` 裡的複本。掛載是連結，工具目錄（`.claude/` 等）裡開啟的檔案即為產物端。連結本身稱「**掛載連結**」，只是通道、不儲存內容；通道的各種狀況見[情境全覽「掛載連結的情境」](https://ingsquared99.github.io/agent-sync/#/zh-TW/scenarios)。
+
+<br>
 
 ### 三層架構
 
@@ -117,6 +123,8 @@ agsy 的世界只有三層、兩個動作。先看最簡化的版本：
 └────────────────────┘
 ```
 
+<br>
+
 ### 三種類別（categories）
 
 指令檔依用途分成三種類別，先弄懂它們各自是什麼：
@@ -148,6 +156,8 @@ agsy 的世界只有三層、兩個動作。先看最簡化的版本：
     └── release.md        （front-matter: target: claude）
 ```
 
+<br>
+
 ### 目前支援的工具與對應資料夾
 
 掛載之後，三種類別會出現在各工具的哪個位置？內建適配器目前支援三個工具，對應關係如下（細節與自訂方式見[適配器說明](https://ingsquared99.github.io/agent-sync/#/zh-TW/adapters)）：
@@ -159,6 +169,8 @@ agsy 的世界只有三層、兩個動作。先看最簡化的版本：
 | Antigravity | `.agents/` | `.agents/rules` | `.agents/skills` | `.agents/workflows` |
 
 表格裡的每一格都是一個**連結**，實際內容都在 `.agsy/` 裡；Codex 依其慣例只讀 prompts，所以 rules 和 skills 沒有掛載位置（`init` 時若只勾 Codex 會特別警告這件事）。
+
+<br>
 
 ### 來源目錄必須照規範命名
 
@@ -172,6 +184,8 @@ agsy 的世界只有三層、兩個動作。先看最簡化的版本：
 ```
 
 > 如果你的既有目錄真的叫別的名字，不必搬家：可以在 `agsy.yaml` 用 `build.categories.<類別>.from` 改掉掃描的子目錄名，詳見[設定檔說明](https://ingsquared99.github.io/agent-sync/#/zh-TW/config)。不確定有沒有掃到時，跑 `agsy doctor` 立刻見分曉。
+
+<br>
 
 ### workflows 的分流：bucket 與 routing
 
@@ -208,6 +222,8 @@ Release 流程說明…
 
 **沒寫 `target` 會怎樣？** 落入設定檔 `route.default` 指定的桶。建議把 default 設成「全部的桶」——一份檔案「到處都出現」比「神祕消失」容易理解得多。細節見[設定檔說明](https://ingsquared99.github.io/agent-sync/#/zh-TW/config)與[適配器說明](https://ingsquared99.github.io/agent-sync/#/zh-TW/adapters)。
 
+<br>
+
 ### 雙向資料流：apply 與 promote
 
 **apply（正向）：來源 → 產物。** 平常的改動都走這條——改來源、跑 apply，所有工具同步更新：
@@ -233,6 +249,8 @@ Release 流程說明…
 
 agsy 用 `.agsy/.agsy-manifest.json`（建置紀錄檔）記錄每個項目在建置當下的來源與產物雜湊值，因此 `status` 能精準判斷：哪些是「來源更新了還沒重建」（behind）、哪些是「產物端被改了還沒寫回」（local changes）、兩邊是否同時被改（需要人工合併）。
 
+<br>
+
 ### 設計上的安全底線
 
 讀文件時會一直看到這些原則，先列在這裡：
@@ -242,6 +260,10 @@ agsy 用 `.agsy/.agsy-manifest.json`（建置紀錄檔）記錄每個項目在�
 3. **刪除前必先確認**：`apply` 會清空產物目錄，若偵測到未寫回的改動一定先問；非互動環境沒有 `--yes` 就取消，絕不硬做。
 4. **產物目錄位置有防呆**：`build.out` 只能是專案內的專用目錄，指到家目錄、來源目錄、專案根都會被設定驗證直接擋下。
 5. **不收符號連結**：來源裡的 symlink 一律不收（含 skill 目錄內部），避免透過連結把來源以外的檔案夾帶進產物。
+
+<br>
+
+---
 
 ## B. 安裝說明
 
@@ -255,6 +277,8 @@ agsy 用 `.agsy/.agsy-manifest.json`（建置紀錄檔）記錄每個項目在�
 
 **安全性說明**：方式一、二安裝的是 GitHub Release 上的預編譯執行檔——由公開的 CI 流程從公開原始碼自動編譯，且 brew 的 cask 與 winget 的 manifest 都寫死了對應檔案的 SHA-256 校驗碼，下載內容可驗證、可稽核。方式三則是直接抓原始碼在你自己的電腦上編譯，完全不經過預編譯檔。agsy 本身**零第三方相依套件**（只用 Go 標準函式庫）。
 
+<br>
+
 ### 方式一：Homebrew（macOS）
 
 ```sh
@@ -265,6 +289,8 @@ brew install ingsquared99/tap/agsy
 - 安裝過程已處理 macOS 的隔離屬性，第一次執行**不會**跳「無法驗證開發者」的警告。
 - 還沒裝過 Homebrew？到官網 <https://brew.sh> 照首頁指示安裝（macOS 開發者的標準配備，裝一次終身受用）。
 
+<br>
+
 ### 方式二：winget（Windows）
 
 ```powershell
@@ -273,6 +299,8 @@ winget install IngSquared99.agsy
 
 - winget 是 Windows 10 / 11 **內建**的官方套件管理器，不用先裝任何東西，開終端機（PowerShell 或 cmd）直接打即可。
 - 裝完重開一個新的終端機視窗，再執行 `agsy version` 確認。
+
+<br>
 
 ### 方式三：從原始碼建置（全平台；Linux 請走這條）
 
@@ -303,6 +331,8 @@ mv agsy ~/go/bin/            # 放進任一在 PATH 裡的目錄
 
 沒有其他框架或函式庫需求——不用 npm、不用 pip，`go build` 一行就是全部。
 
+<br>
+
 ### 驗證安裝
 
 ```sh
@@ -315,6 +345,8 @@ agsy version
 ```sh
 agsy doctor
 ```
+
+<br>
 
 ### 介面語言：中文／英文怎麼決定
 
@@ -349,6 +381,8 @@ export AGSY_LANG=en       # 強制英文
 
 `export` 只對目前這個終端機視窗有效；想永久生效，把那一行加進 shell 設定檔（macOS 預設 zsh → `~/.zshrc`），重開終端機後生效。
 
+<br>
+
 ### 升級與移除
 
 | | 方式一 Homebrew | 方式二 winget | 方式三 Go |
@@ -357,6 +391,10 @@ export AGSY_LANG=en       # 強制英文
 | 移除執行檔 | `brew uninstall agsy` | `winget uninstall IngSquared99.agsy` | 刪 `~/go/bin/agsy` |
 
 移除前記得先在每個用過 agsy 的專案裡跑 `agsy clean`（移除掛載連結與 `.agsy/` 產物；`agsy.yaml` 會保留，不需要的話手動刪除）。
+
+<br>
+
+---
 
 ## C. 快速上手：四步完成第一次同步
 
@@ -369,6 +407,8 @@ export AGSY_LANG=en       # 強制英文
 ```
 
 > 以下的終端機畫面都是**示意**（依實際版本可能略有差異），幫助你預期每一步會看到什麼。
+
+<br>
 
 ### 兩種操作方式
 
@@ -393,6 +433,8 @@ agsy v1.2.3
 
 第一次在專案裡執行、還沒有設定檔時，選單會直接引導你進入 `init`。
 
+<br>
+
 ### 指令速查表
 
 | 指令 | 做什麼 | 會不會寫入 |
@@ -407,6 +449,8 @@ agsy v1.2.3
 | `agsy version` / `agsy help` | 版本 / 說明 | 唯讀 |
 
 全域旗標：`--yes`（縮寫 `-y`）＝所有確認一律回答「是」，給 CI、腳本、git hook 等非互動環境用。**沒有 `--yes` 時，非互動環境遇到需要確認的動作會直接取消，絕不硬做。**
+
+<br>
 
 ### Step 0：準備來源目錄
 
@@ -435,6 +479,8 @@ mkdir -p ./repo-ai-lib/rules ./repo-ai-lib/skills ./repo-ai-lib/workflows
 - `rules/` — 單一 `.md` 檔
 - `skills/` — **目錄**＋必備 `SKILL.md`（內部不可含符號連結）
 - `workflows/` — 單一 `.md` 檔，front-matter 可標 `target:` 分流
+
+<br>
 
 ### Step 1：`agsy init` — 回答五個問題
 
@@ -490,6 +536,8 @@ workflow 沒標示 target 時放到哪?
 - `.gitignore` 那題答 **y**——產物不進版控；`agsy.yaml` 本身則**要**進版控。
 - 非互動環境（CI）用 `agsy init --yes ~/all-ai-lib ./repo-ai-lib`：來源用參數給，`--yes`＝接受建議預設策略。
 
+<br>
+
 ### Step 2：`agsy plan` — 唯讀預覽，看三個地方
 
 `plan` 把 apply 會做的每件事演練一遍，**保證不寫入任何檔案**：
@@ -533,6 +581,8 @@ workflows → .agsy/workflows/（策略: rename）
 2. **有沒有 `✘` 區塊**：同名衝突、撞名、路由錯誤——出現任何一種，apply 都會拒絕，先照清單修。
 3. **摘要那一行**：衝突／撞名／掛載異常都是 0，就可以放心進下一步。
 
+<br>
+
 ### Step 3：`agsy apply` — 正式建置與掛載
 
 ```text
@@ -545,6 +595,8 @@ $ agsy apply
 
 若中途停下，都是保護機制在動作：來源路徑缺失、掛載點被真實目錄佔用、或偵測到未寫回的本機改動（會列清單問你要不要捨棄）。照訊息處理完重跑即可，細節見[指令說明](https://ingsquared99.github.io/agent-sync/#/zh-TW/commands)。
 
+<br>
+
 ### 日常循環：三句話
 
 ```
@@ -554,6 +606,8 @@ $ agsy apply
 ```
 
 **心智模型只有一條**：來源是唯一的真相來源（source of truth）。正常改動改來源＋`apply`；不小心（或刻意讓 AI）改到產物端，就用 `promote` 收回來。
+
+<br>
 
 ### 在 CI / git hook 裡使用
 
@@ -566,6 +620,10 @@ agsy status || { echo "agsy 不同步，請先執行 agsy apply"; exit 1; }
 # CI 裡重建（非互動，接受所有確認）
 agsy apply --yes
 ```
+
+<br>
+
+---
 
 ## D. 深入了解
 

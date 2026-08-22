@@ -40,6 +40,9 @@ type language struct {
 }
 
 func main() {
+	// GitHub collapses consecutive blank lines, so real vertical breathing
+	// room between chapters needs <br> plus a horizontal rule.
+	const chapterSep = "\n<br>\n\n---\n\n"
 	for _, l := range languages {
 		var b strings.Builder
 		b.WriteString(l.header)
@@ -50,7 +53,7 @@ func main() {
 				os.Exit(1)
 			}
 			b.WriteString(transform(string(raw), l, ch.letter))
-			b.WriteString("\n")
+			b.WriteString(chapterSep)
 		}
 		b.WriteString(l.deeper)
 		b.WriteString(l.footer)
@@ -83,6 +86,10 @@ func transform(raw string, l language, letter string) string {
 		if strings.HasPrefix(ln, "# ") && !titled {
 			ln = "## " + letter + ". " + strings.TrimPrefix(ln, "# ")
 			titled = true
+		} else if strings.HasPrefix(ln, "## ") {
+			// extra breathing room before each in-chapter section
+			out = append(out, "<br>", "")
+			ln = "#" + ln
 		} else if strings.HasPrefix(ln, "#") {
 			ln = "#" + ln // demote one level
 		}
