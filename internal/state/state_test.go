@@ -42,10 +42,10 @@ func setup(t *testing.T) (*config.Config, *build.Manifest, string, string) {
 	lib := filepath.Join(root, "lib")
 	flow := filepath.Join(proj, ".flow")
 	write(t, filepath.Join(proj, config.FileName), stateYAML)
-	write(t, filepath.Join(lib, "rule", "security.md"), "# 安全\n")
-	write(t, filepath.Join(lib, "workflow", "release-note.md"), "沒標 target\n")
-	write(t, filepath.Join(flow, "skill", "api-doc", "SKILL.md"), "---\nname: api-doc\n---\n內文\n")
-	write(t, filepath.Join(flow, "skill", "api-doc", "ref.md"), "參考\n")
+	write(t, filepath.Join(lib, "rules", "security.md"), "# 安全\n")
+	write(t, filepath.Join(lib, "workflows", "release-note.md"), "沒標 target\n")
+	write(t, filepath.Join(flow, "skills", "api-doc", "SKILL.md"), "---\nname: api-doc\n---\n內文\n")
+	write(t, filepath.Join(flow, "skills", "api-doc", "ref.md"), "參考\n")
 
 	cfg, err := config.Load(filepath.Join(proj, config.FileName))
 	if err != nil {
@@ -96,9 +96,9 @@ func TestFourKindsOfGap(t *testing.T) {
 	cfg, m, lib, _ := setup(t)
 
 	// 1. Lag: source content changed
-	write(t, filepath.Join(lib, "rule", "security.md"), "# 安全\n- 新增一條\n")
+	write(t, filepath.Join(lib, "rules", "security.md"), "# 安全\n- 新增一條\n")
 	// 2. New: source gained a file
-	write(t, filepath.Join(lib, "rule", "testing.md"), "# 測試\n")
+	write(t, filepath.Join(lib, "rules", "testing.md"), "# 測試\n")
 	// 3. Local change: output modified through the mount (simulates an AI editing it)
 	skillMD := filepath.Join(cfg.BaseDir, ".claude", "skills", "api-doc", "SKILL.md")
 	write(t, skillMD, "---\nname: api-doc\n---\n內文\n## AI 加寫的章節\n")
@@ -135,7 +135,7 @@ func TestSourceDeletedVsRootMissing(t *testing.T) {
 	cfg, m, lib, _ := setup(t)
 
 	// First delete just one file.
-	if err := os.Remove(filepath.Join(lib, "rule", "security.md")); err != nil {
+	if err := os.Remove(filepath.Join(lib, "rules", "security.md")); err != nil {
 		t.Fatal(err)
 	}
 	r := collect(t, cfg, m)

@@ -25,7 +25,7 @@ func writeFile(t *testing.T, path, body string) {
 
 func writeSkill(t *testing.T, root, name string) {
 	t.Helper()
-	writeFile(t, filepath.Join(root, "skill", name, "SKILL.md"), "---\nname: "+name+"\n---\nbody\n")
+	writeFile(t, filepath.Join(root, "skills", name, "SKILL.md"), "---\nname: "+name+"\n---\nbody\n")
 }
 
 // newProject creates a project: proj/ is the root, libs are source names outside the project
@@ -65,12 +65,12 @@ func setupTwoSources(t *testing.T, rulesStrategy, skillsStrategy string) (*confi
 	cfg := newProject(t, strings.Replace(strings.Replace(twoSourceYAML, "%s", rulesStrategy, 1), "%s", skillsStrategy, 1))
 	lib := filepath.Join(filepath.Dir(cfg.BaseDir), "lib")
 	flow := filepath.Join(cfg.BaseDir, ".flow")
-	writeFile(t, filepath.Join(lib, "rule", "python-style.md"), "lib version\n")
-	writeFile(t, filepath.Join(lib, "rule", "git-commit.md"), "commit\n")
+	writeFile(t, filepath.Join(lib, "rules", "python-style.md"), "lib version\n")
+	writeFile(t, filepath.Join(lib, "rules", "git-commit.md"), "commit\n")
 	writeSkill(t, lib, "code-review")
-	writeFile(t, filepath.Join(lib, "workflow", "deploy.md"), "---\ntarget: [claude]\n---\nd\n")
-	writeFile(t, filepath.Join(lib, "workflow", "release-note.md"), "no target tag\n")
-	writeFile(t, filepath.Join(flow, "rule", "python-style.md"), "flow version\n")
+	writeFile(t, filepath.Join(lib, "workflows", "deploy.md"), "---\ntarget: [claude]\n---\nd\n")
+	writeFile(t, filepath.Join(lib, "workflows", "release-note.md"), "no target tag\n")
+	writeFile(t, filepath.Join(flow, "rules", "python-style.md"), "flow version\n")
 	writeSkill(t, flow, "api-doc")
 	return cfg, lib, flow
 }
@@ -106,7 +106,7 @@ func TestAccepts(t *testing.T) {
 	writeFile(t, filepath.Join(dir, "ok.md"), "x")
 	writeFile(t, filepath.Join(dir, "note.txt"), "x")
 	writeSkill(t, dir, "good")
-	if err := os.MkdirAll(filepath.Join(dir, "skill", "empty"), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Join(dir, "skills", "empty"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	cases := []struct {
@@ -120,8 +120,8 @@ func TestAccepts(t *testing.T) {
 		{"rules", filepath.Join(dir, ".hidden.md"), false, false, "starts with ."},
 		{"rules", filepath.Join(dir, "subdir"), true, false, "a directory is not accepted"},
 		{"workflows", filepath.Join(dir, "ok.md"), false, true, ""},
-		{"skills", filepath.Join(dir, "skill", "good"), true, true, ""},
-		{"skills", filepath.Join(dir, "skill", "empty"), true, false, "no SKILL.md"},
+		{"skills", filepath.Join(dir, "skills", "good"), true, true, ""},
+		{"skills", filepath.Join(dir, "skills", "empty"), true, false, "no SKILL.md"},
 		{"skills", filepath.Join(dir, "ok.md"), false, false, "a single file is not accepted"},
 	}
 	for _, c := range cases {
@@ -223,7 +223,7 @@ func TestConflictError(t *testing.T) {
 // name like python-style-fromlib-flow.md
 func TestDetectCollisions(t *testing.T) {
 	cfg, lib, _ := setupTwoSources(t, "rename", "error")
-	writeFile(t, filepath.Join(lib, "rule", "python-style-fromlib-flow.md"), "coincidental name\n")
+	writeFile(t, filepath.Join(lib, "rules", "python-style-fromlib-flow.md"), "coincidental name\n")
 	p := compute(t, cfg)
 	if len(p.Collisions) != 1 {
 		t.Fatalf("expected 1 final-name collision, got %+v", p.Collisions)
@@ -237,7 +237,7 @@ func TestDetectCollisions(t *testing.T) {
 
 func TestRouteWorkflows(t *testing.T) {
 	cfg, lib, _ := setupTwoSources(t, "rename", "error")
-	writeFile(t, filepath.Join(lib, "workflow", "standup.md"), "---\ntarget: [agents]\n---\ns\n")
+	writeFile(t, filepath.Join(lib, "workflows", "standup.md"), "---\ntarget: [agents]\n---\ns\n")
 	p := compute(t, cfg)
 	want := map[string][]string{
 		"deploy.md":       {"claude"},
@@ -262,7 +262,7 @@ func TestRouteUnknownBucketFails(t *testing.T) {
 	// A bad bucket no longer aborts Compute (that would hide the rest of the
 	// plan); it is collected into RouteErrors and Execute refuses to build.
 	cfg, lib, _ := setupTwoSources(t, "rename", "error")
-	writeFile(t, filepath.Join(lib, "workflow", "bad.md"), "---\ntarget: [nosuch]\n---\nx\n")
+	writeFile(t, filepath.Join(lib, "workflows", "bad.md"), "---\ntarget: [nosuch]\n---\nx\n")
 	p := compute(t, cfg)
 	if len(p.RouteErrors) != 1 || !strings.Contains(p.RouteErrors[0], "nosuch") {
 		t.Errorf("RouteErrors = %v, want the unknown bucket collected", p.RouteErrors)
@@ -292,7 +292,7 @@ func TestRouteEmptyDefault(t *testing.T) {
 func TestExecuteEndToEnd(t *testing.T) {
 	cfg, lib, _ := setupTwoSources(t, "rename", "error")
 	// the skill carries an executable script: permissions must be preserved
-	script := filepath.Join(lib, "skill", "code-review", "run.sh")
+	script := filepath.Join(lib, "skills", "code-review", "run.sh")
 	writeFile(t, script, "#!/bin/sh\necho hi\n")
 	if err := os.Chmod(script, 0o755); err != nil {
 		t.Fatal(err)

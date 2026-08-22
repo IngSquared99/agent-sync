@@ -39,7 +39,7 @@ func TestLocalChangeMarksSourceGone(t *testing.T) {
 	cfg, m, lib, _ := setup(t)
 	write(t, filepath.Join(cfg.OutDir(), "rules", "security.md"), "# 安全\n## 產物端改的\n")
 
-	if err := os.Remove(filepath.Join(lib, "rule", "security.md")); err != nil {
+	if err := os.Remove(filepath.Join(lib, "rules", "security.md")); err != nil {
 		t.Fatal(err)
 	}
 	r := collect(t, cfg, m)

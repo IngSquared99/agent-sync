@@ -12,7 +12,7 @@ import (
 // This was the one remaining data-loss path; both directions must be rejected.
 func TestOutInsideSourceRejected(t *testing.T) {
 	dir := t.TempDir()
-	if err := os.MkdirAll(filepath.Join(dir, "a-lib", "rule"), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Join(dir, "a-lib", "rules"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	cfgRaw := `version: 1

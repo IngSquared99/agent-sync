@@ -130,9 +130,9 @@
 <p>接下來把 ① 和 ② 兩個動作分開看清楚。</p>
 
 <h3>動作①「建置」：把多個來源合併「複製」成一份</h3>
-<pre><code> ~/all-ai-lib/rule/python-style.md  ──┐
- ~/all-ai-lib/rule/git-commit.md    ──┤  複製、合併
- ./repo-ai-lib/rule/api-naming.md   ──┘
+<pre><code> ~/all-ai-lib/rules/python-style.md  ──┐
+ ~/all-ai-lib/rules/git-commit.md    ──┤  複製、合併
+ ./repo-ai-lib/rules/api-naming.md   ──┘
                                        ▼
                               .agsy/rules/python-style.md
                               .agsy/rules/git-commit.md
@@ -166,12 +166,48 @@
 └────────────────────┘</code></pre>
 
 <h2>三種類別（categories）</h2>
+<p>指令檔依用途分成三種類別，先弄懂它們各自是什麼：</p>
+<ul>
+<li><strong>rules（規則）</strong>：長期有效的規範或風格指引——coding style、命名慣例、commit 訊息格式……AI 工具會把它當成「隨時都要遵守的背景守則」讀進去。</li>
+<li><strong>skills（技能）</strong>：打包好的「一項能力」——一個目錄裝著說明（<code>SKILL.md</code>）加上可能附帶的腳本、範本等素材。工具依 <code>SKILL.md</code> 裡的描述，在遇到相關任務時自動取用。</li>
+<li><strong>workflows（工作流程）</strong>：一步一步的操作流程或常用指令——release 流程、code review SOP……在 Claude Code 裡會變成可以直接呼叫的斜線指令（<code>/release</code> 這種）。</li>
+</ul>
+<p>來源目錄下就用三個同名子目錄存放，格式各有規定：</p>
 <table>
 <tr><th>類別</th><th>來源子目錄（預設）</th><th>格式</th><th>輸出位置</th></tr>
-<tr><td>rules</td><td><code>rule/</code></td><td>單一 <code>.md</code> 檔</td><td><code>.agsy/rules/</code></td></tr>
-<tr><td>skills</td><td><code>skill/</code></td><td><strong>目錄</strong>，內含 <code>SKILL.md</code></td><td><code>.agsy/skills/</code></td></tr>
-<tr><td>workflows</td><td><code>workflow/</code></td><td>單一 <code>.md</code>，front-matter 可標 <code>target</code></td><td><code>.agsy/workflows/&lt;bucket&gt;/</code></td></tr>
+<tr><td>rules</td><td><code>rules/</code></td><td>單一 <code>.md</code> 檔</td><td><code>.agsy/rules/</code></td></tr>
+<tr><td>skills</td><td><code>skills/</code></td><td><strong>目錄</strong>，內含 <code>SKILL.md</code></td><td><code>.agsy/skills/</code></td></tr>
+<tr><td>workflows</td><td><code>workflows/</code></td><td>單一 <code>.md</code>，front-matter 可標 <code>target</code></td><td><code>.agsy/workflows/&lt;bucket&gt;/</code></td></tr>
 </table>
+<p>一個典型的來源長這樣：</p>
+<pre><code>~/all-ai-lib/
+├── rules/
+│   ├── python-style.md
+│   └── git-commit.md
+├── skills/
+│   └── code-review/
+│       ├── SKILL.md
+│       └── scripts/…
+└── workflows/
+    └── release.md        （front-matter: target: claude）</code></pre>
+
+<h2>目前支援的工具與對應資料夾</h2>
+<p>掛載之後，三種類別會出現在各工具的哪個位置？內建適配器目前支援三個工具，對應關係如下（細節與自訂方式見 <a href="#adapters">適配器說明</a>）：</p>
+<table>
+<tr><th>工具</th><th>掛載目錄</th><th>rules</th><th>skills</th><th>workflows</th></tr>
+<tr><td>Claude Code</td><td><code>.claude/</code></td><td><code>.claude/rules</code></td><td><code>.claude/skills</code></td><td><code>.claude/commands</code>（成為斜線指令）</td></tr>
+<tr><td>OpenAI Codex</td><td><code>.codex/</code></td><td>—（不掛載）</td><td>—（不掛載）</td><td><code>.codex/prompts</code></td></tr>
+<tr><td>Antigravity</td><td><code>.agents/</code></td><td><code>.agents/rules</code></td><td><code>.agents/skills</code></td><td><code>.agents/workflows</code></td></tr>
+</table>
+<p>表格裡的每一格都是一個<strong>連結</strong>，實際內容都在 <code>.agsy/</code> 裡；Codex 依其慣例只讀 prompts，所以 rules 和 skills 沒有掛載位置（<code>init</code> 時若只勾 Codex 會特別警告這件事）。</p>
+
+<h2>來源目錄必須照規範命名</h2>
+<p>不管是個人共用庫（<code>~/all-ai-lib</code>）還是專案內的庫（<code>./repo-ai-lib</code>），<strong>裡面的子目錄都必須叫 <code>rules/</code>、<code>skills/</code>、<code>workflows/</code></strong>（複數）——agsy 掃描時只認這三個名字，拼錯或用別的名字（如 <code>rule/</code>、<code>my-rules/</code>）的目錄會被直接跳過，檔案就「神祕消失」了。</p>
+<pre><code>✔ 正確                          ✘ 掃不到
+~/all-ai-lib/rules/…            ~/all-ai-lib/rule/…
+~/all-ai-lib/skills/…           ~/all-ai-lib/Skill/…
+~/all-ai-lib/workflows/…        ~/all-ai-lib/wf/…</code></pre>
+<blockquote><p>如果你的既有目錄真的叫別的名字，不必搬家：可以在 <code>agsy.yaml</code> 用 <code>build.categories.&lt;類別&gt;.from</code> 改掉掃描的子目錄名，詳見<a href="#config">設定檔說明</a>。不確定有沒有掃到時，跑 <code>agsy doctor</code> 立刻見分曉。</p></blockquote>
 
 <h2>workflows 的分流：bucket 與 routing</h2>
 <p>rules 和 skills 建置後<strong>所有工具讀同一份</strong>；workflows 不一樣——每個工具的「指令／prompt」格式與用途不一定通用，所以產物裡的 <code>workflows/</code> 又按工具分成子資料夾：</p>
@@ -184,9 +220,9 @@
 <li>建置時 agsy 決定「每份 workflow 該丟進哪些桶」的過程，就叫 <strong>routing（分流）</strong>。</li>
 </ul>
 <p>分流的依據，是 workflow 檔案開頭 front-matter 的 <code>target</code> 標記：</p>
-<pre><code> workflow/release.md （target: claude）          ──▶  只進 claude 桶 → 只有 Claude Code 看得到
- workflow/deploy.md  （target: [claude, codex]） ──▶  兩個桶各放一份 → 兩個工具都看得到
- workflow/note.md    （沒寫 target）             ──▶  依 route.default 的設定決定去向</code></pre>
+<pre><code> workflows/release.md （target: claude）          ──▶  只進 claude 桶 → 只有 Claude Code 看得到
+ workflows/deploy.md  （target: [claude, codex]） ──▶  兩個桶各放一份 → 兩個工具都看得到
+ workflows/note.md    （沒寫 target）             ──▶  依 route.default 的設定決定去向</code></pre>
 <p><code>target</code> 的寫法就是在檔案最上方：</p>
 <pre><code>---
 target: claude          # 只給 Claude Code
@@ -289,9 +325,9 @@ agsy &lt;指令&gt;      # 直接執行（適合熟手與腳本）</code></pre>
 <p>全域旗標 <code>--yes</code>（<code>-y</code>）：所有確認一律「是」，給 CI／腳本用。<strong>沒有它時，非互動環境需要確認的動作會直接取消，絕不硬做。</strong></p>
 
 <h2>B-3. Step 0：準備來源目錄</h2>
-<pre><code>mkdir -p ~/all-ai-lib/rule ~/all-ai-lib/skill ~/all-ai-lib/workflow
-mkdir -p ./repo-ai-lib/rule ./repo-ai-lib/skill ./repo-ai-lib/workflow</code></pre>
-<p>格式要求（不合規的檔案會被略過並回報原因）：<code>rule/</code> 單一 <code>.md</code>；<code>skill/</code> 目錄＋<code>SKILL.md</code>、內部不可含符號連結；<code>workflow/</code> 單一 <code>.md</code>，front-matter 可標 <code>target:</code>。</p>
+<pre><code>mkdir -p ~/all-ai-lib/rules ~/all-ai-lib/skills ~/all-ai-lib/workflows
+mkdir -p ./repo-ai-lib/rules ./repo-ai-lib/skills ./repo-ai-lib/workflow</code></pre>
+<p>格式要求（不合規的檔案會被略過並回報原因）：<code>rules/</code> 單一 <code>.md</code>；<code>skills/</code> 目錄＋<code>SKILL.md</code>、內部不可含符號連結；<code>workflows/</code> 單一 <code>.md</code>，front-matter 可標 <code>target:</code>。</p>
 
 <h2>B-4. Step 1：<code>agsy init</code></h2>
 <p>在專案根目錄執行。問答依序：來源路徑（依優先權）→ 掛載哪些工具（多選）→ 三個類別的同名策略（必答；建議 rules=<code>rename</code>、skills=<code>error</code>、workflows=<code>rename</code>）→ 產物目錄（預設 <code>.agsy</code>）→ 無 target 的 workflow 去向。完成後詢問是否把產物目錄加入 <code>.gitignore</code>（建議加；<code>agsy.yaml</code> 則應進版控）。</p>
@@ -335,9 +371,9 @@ build:
   out: .agsy                  # 必須在專案內（apply 會整個清空重建）
 
   categories:                 # 來源子目錄 → 產物子目錄（三個 to 不可相同）
-    rules:     { from: rule, to: rules }
-    skills:    { from: skill, to: skills }
-    workflows: { from: workflow, to: workflows }
+    rules:     { from: rules, to: rules }
+    skills:    { from: skills, to: skills }
+    workflows: { from: workflows, to: workflows }
 
   on_conflict:                # 同名處理：first / rename / error（每類別必填）
     rules:     rename

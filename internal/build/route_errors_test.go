@@ -10,8 +10,8 @@ import (
 // unaffected workflows still get their buckets, and Execute refuses to build.
 func TestRouteProblemsAreCollectedNotFatal(t *testing.T) {
 	cfg, lib, _ := setupTwoSources(t, "rename", "error")
-	writeFile(t, filepath.Join(lib, "workflow", "bad1.md"), "---\ntarget: cursor\n---\nx\n")
-	writeFile(t, filepath.Join(lib, "workflow", "bad2.md"), "---\ntarget: [nope]\n---\nx\n")
+	writeFile(t, filepath.Join(lib, "workflows", "bad1.md"), "---\ntarget: cursor\n---\nx\n")
+	writeFile(t, filepath.Join(lib, "workflows", "bad2.md"), "---\ntarget: [nope]\n---\nx\n")
 
 	p := compute(t, cfg)
 	if len(p.RouteErrors) != 2 {

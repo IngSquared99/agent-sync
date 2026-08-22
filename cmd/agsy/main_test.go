@@ -42,9 +42,9 @@ func chdir(t *testing.T, dir string) {
 func newProject(t *testing.T) string {
 	t.Helper()
 	proj := t.TempDir()
-	write(t, filepath.Join(proj, "repo-ai-lib", "rule", "python-style.md"), "# 風格\n")
-	write(t, filepath.Join(proj, "repo-ai-lib", "skill", "api-doc", "SKILL.md"), "---\nname: api-doc\n---\n內文\n")
-	write(t, filepath.Join(proj, "repo-ai-lib", "workflow", "release-note.md"), "沒標 target\n")
+	write(t, filepath.Join(proj, "repo-ai-lib", "rules", "python-style.md"), "# 風格\n")
+	write(t, filepath.Join(proj, "repo-ai-lib", "skills", "api-doc", "SKILL.md"), "---\nname: api-doc\n---\n內文\n")
+	write(t, filepath.Join(proj, "repo-ai-lib", "workflows", "release-note.md"), "沒標 target\n")
 	return proj
 }
 
@@ -177,7 +177,7 @@ func TestStatusPromoteCycle(t *testing.T) {
 	if code := cmdPromote([]string{"workflows/release-note.md"}); code != 0 {
 		t.Fatalf("promote exit code = %d", code)
 	}
-	src, err := os.ReadFile(filepath.Join(proj, "repo-ai-lib", "workflow", "release-note.md"))
+	src, err := os.ReadFile(filepath.Join(proj, "repo-ai-lib", "workflows", "release-note.md"))
 	if err != nil {
 		t.Fatal(err)
 	}

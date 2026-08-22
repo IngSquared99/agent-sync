@@ -82,7 +82,7 @@ func TestPromoteToRefusesNonSourcePath(t *testing.T) {
 	if code := cmdPromote([]string{"rules/python-style.md", "--to", elsewhere}); code == 0 {
 		t.Fatal("promote --to should refuse a path that is not a configured source")
 	}
-	if _, err := os.Stat(filepath.Join(elsewhere, "rule", "python-style.md")); err == nil {
+	if _, err := os.Stat(filepath.Join(elsewhere, "rules", "python-style.md")); err == nil {
 		t.Fatal("promote --to wrote outside the configured sources")
 	}
 
@@ -90,7 +90,7 @@ func TestPromoteToRefusesNonSourcePath(t *testing.T) {
 	if code := cmdPromote([]string{"rules/python-style.md"}); code != 0 {
 		t.Fatal("promote to the legitimate source should still succeed")
 	}
-	src, err := os.ReadFile(filepath.Join(proj, "repo-ai-lib", "rule", "python-style.md"))
+	src, err := os.ReadFile(filepath.Join(proj, "repo-ai-lib", "rules", "python-style.md"))
 	if err != nil {
 		t.Fatal(err)
 	}

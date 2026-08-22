@@ -19,8 +19,8 @@ func TestResolvePromoteDest(t *testing.T) {
 	libA := filepath.Join(proj, "lib-a")
 	libB := filepath.Join(proj, "lib-b")
 	for _, d := range []string{
-		filepath.Join(libA, "rule"), filepath.Join(libA, "skill"),
-		filepath.Join(libB, "rule"),
+		filepath.Join(libA, "rules"), filepath.Join(libA, "skills"),
+		filepath.Join(libB, "rules"),
 	} {
 		if err := os.MkdirAll(d, 0o755); err != nil {
 			t.Fatal(err)
@@ -31,8 +31,8 @@ func TestResolvePromoteDest(t *testing.T) {
 		BaseDir: proj,
 	}
 	cfg.Build.Categories = map[string]config.Category{
-		"rules":  {From: "rule", To: "rules"},
-		"skills": {From: "skill", To: "skills"},
+		"rules":  {From: "rules", To: "rules"},
+		"skills": {From: "skills", To: "skills"},
 	}
 	item := func(cat, from, original string) build.ManifestItem {
 		return build.ManifestItem{Category: cat, Name: original, Original: original, From: from}
@@ -44,17 +44,17 @@ func TestResolvePromoteDest(t *testing.T) {
 		toRaw   string
 		wantErr bool
 	}{
-		{"legitimate origin", item("rules", filepath.Join(libA, "rule", "x.md"), "x.md"), "", false},
-		{"legitimate skill dir", item("skills", filepath.Join(libA, "skill", "api-doc"), "api-doc"), "", false},
-		{"legitimate --to another source", item("rules", filepath.Join(libA, "rule", "x.md"), "x.md"), "./lib-b", false},
+		{"legitimate origin", item("rules", filepath.Join(libA, "rules", "x.md"), "x.md"), "", false},
+		{"legitimate skill dir", item("skills", filepath.Join(libA, "skills", "api-doc"), "api-doc"), "", false},
+		{"legitimate --to another source", item("rules", filepath.Join(libA, "rules", "x.md"), "x.md"), "./lib-b", false},
 		{"outside every source", item("rules", filepath.Join(proj, "elsewhere", "x.md"), "x.md"), "", true},
-		{"category dir itself (parent-level wipe)", item("skills", filepath.Join(libA, "skill"), "api-doc"), "", true},
+		{"category dir itself (parent-level wipe)", item("skills", filepath.Join(libA, "skills"), "api-doc"), "", true},
 		{"source root itself", item("skills", libA, "api-doc"), "", true},
-		{"wrong category subdir", item("skills", filepath.Join(libA, "rule", "api-doc"), "api-doc"), "", true},
-		{"nested deeper than the slot", item("rules", filepath.Join(libA, "rule", "sub", "x.md"), "x.md"), "", true},
-		{"basename differs from original", item("rules", filepath.Join(libA, "rule", "other.md"), "x.md"), "", true},
-		{"original smuggles a path", item("rules", filepath.Join(libA, "rule", "x.md"), "../x.md"), "", true},
-		{"--to not a configured source", item("rules", filepath.Join(libA, "rule", "x.md"), "x.md"), "/tmp/evil", true},
+		{"wrong category subdir", item("skills", filepath.Join(libA, "rules", "api-doc"), "api-doc"), "", true},
+		{"nested deeper than the slot", item("rules", filepath.Join(libA, "rules", "sub", "x.md"), "x.md"), "", true},
+		{"basename differs from original", item("rules", filepath.Join(libA, "rules", "other.md"), "x.md"), "", true},
+		{"original smuggles a path", item("rules", filepath.Join(libA, "rules", "x.md"), "../x.md"), "", true},
+		{"--to not a configured source", item("rules", filepath.Join(libA, "rules", "x.md"), "x.md"), "/tmp/evil", true},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -77,19 +77,19 @@ func TestResolvePromoteDestRefusesSymlinkTarget(t *testing.T) {
 	}
 	proj := t.TempDir()
 	lib := filepath.Join(proj, "lib")
-	if err := os.MkdirAll(filepath.Join(lib, "rule"), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Join(lib, "rules"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	victim := filepath.Join(proj, "victim.md")
 	if err := os.WriteFile(victim, []byte("x"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	link := filepath.Join(lib, "rule", "x.md")
+	link := filepath.Join(lib, "rules", "x.md")
 	if err := os.Symlink(victim, link); err != nil {
 		t.Fatal(err)
 	}
 	cfg := &config.Config{Sources: []string{"./lib"}, BaseDir: proj}
-	cfg.Build.Categories = map[string]config.Category{"rules": {From: "rule", To: "rules"}}
+	cfg.Build.Categories = map[string]config.Category{"rules": {From: "rules", To: "rules"}}
 	it := build.ManifestItem{Category: "rules", Name: "x.md", Original: "x.md", From: link}
 	if _, err := resolvePromoteDest(cfg, it, ""); err == nil || !strings.Contains(err.Error(), "symbolic") {
 		t.Fatalf("symlink destination must be refused, got err=%v", err)

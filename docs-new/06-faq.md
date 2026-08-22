@@ -54,7 +54,7 @@ rules / workflows 只收**單一 `.md` 檔**：目錄不收、副檔名不是 `.
 
 ### Q9：status 說有 untracked 檔案，apply 還會把它刪掉，怎麼辦？
 
-untracked＝有人（通常是 AI 工具）直接在掛載側**新增**了 manifest 不認識的檔案。它沒有對應的來源位置，所以 `promote` 寫不回去、`apply` 重建時會刪掉。**要保留：把檔案搬進某個來源的對應子目錄（如 `~/all-ai-lib/rule/`），再跑 `apply`。**
+untracked＝有人（通常是 AI 工具）直接在掛載側**新增**了 manifest 不認識的檔案。它沒有對應的來源位置，所以 `promote` 寫不回去、`apply` 重建時會刪掉。**要保留：把檔案搬進某個來源的對應子目錄（如 `~/all-ai-lib/rules/`），再跑 `apply`。**
 
 ### Q10：檔名多了一段 `-fromlib-xxx` 是什麼？
 

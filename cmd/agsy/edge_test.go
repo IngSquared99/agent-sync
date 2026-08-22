@@ -73,7 +73,7 @@ func TestPromoteRefusesDivergedCopies(t *testing.T) {
 	if code := cmdPromote([]string{"workflows/release-note.md"}); code == 0 {
 		t.Error("promote must refuse when copies diverge")
 	}
-	src, err := os.ReadFile(filepath.Join(proj, "repo-ai-lib", "workflow", "release-note.md"))
+	src, err := os.ReadFile(filepath.Join(proj, "repo-ai-lib", "workflows", "release-note.md"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -123,7 +123,7 @@ func TestPromoteRecreatesDeletedSourceFile(t *testing.T) {
 	if code := cmdApply(); code != 0 {
 		t.Fatal("apply failed")
 	}
-	srcFile := filepath.Join(proj, "repo-ai-lib", "rule", "python-style.md")
+	srcFile := filepath.Join(proj, "repo-ai-lib", "rules", "python-style.md")
 	if err := os.Remove(srcFile); err != nil {
 		t.Fatal(err)
 	}

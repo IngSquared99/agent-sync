@@ -13,7 +13,7 @@ func TestRemoveOutRefusesOutInsideSource(t *testing.T) {
 	dir := t.TempDir()
 	cfg := &config.Config{
 		Sources: []string{"./a-lib"},
-		Build:   config.BuildCfg{Out: filepath.Join("a-lib", "rule")},
+		Build:   config.BuildCfg{Out: filepath.Join("a-lib", "rules")},
 		BaseDir: dir,
 	}
 	if err := RemoveOut(cfg); err == nil {

@@ -55,9 +55,9 @@ agsy 的世界只有三層、兩個動作。先看最簡化的版本：
 ### 動作①「建置」：把多個來源合併「複製」成一份
 
 ```
- ~/all-ai-lib/rule/python-style.md  ──┐
- ~/all-ai-lib/rule/git-commit.md    ──┤  複製、合併
- ./repo-ai-lib/rule/api-naming.md   ──┘
+ ~/all-ai-lib/rules/python-style.md  ──┐
+ ~/all-ai-lib/rules/git-commit.md    ──┤  複製、合併
+ ./repo-ai-lib/rules/api-naming.md   ──┘
                                        ▼
                               .agsy/rules/python-style.md
                               .agsy/rules/git-commit.md
@@ -104,28 +104,59 @@ agsy 的世界只有三層、兩個動作。先看最簡化的版本：
 
 ## 三種類別（categories）
 
-來源目錄下用三個子目錄分類，格式各有規定：
+指令檔依用途分成三種類別，先弄懂它們各自是什麼：
+
+- **rules（規則）**：長期有效的規範或風格指引——coding style、命名慣例、commit 訊息格式……AI 工具會把它當成「隨時都要遵守的背景守則」讀進去。
+- **skills（技能）**：打包好的「一項能力」——一個目錄裝著說明（`SKILL.md`）加上可能附帶的腳本、範本等素材。工具依 `SKILL.md` 裡的描述，在遇到相關任務時自動取用。
+- **workflows（工作流程）**：一步一步的操作流程或常用指令——release 流程、code review SOP……在 Claude Code 裡會變成可以直接呼叫的斜線指令（`/release` 這種）。
+
+來源目錄下就用三個同名子目錄存放，格式各有規定：
 
 | 類別 | 來源子目錄（預設） | 格式 | 輸出位置 |
 |------|--------------------|------|----------|
-| rules | `rule/` | 單一 `.md` 檔 | `.agsy/rules/` |
-| skills | `skill/` | **目錄**，內含 `SKILL.md` | `.agsy/skills/` |
-| workflows | `workflow/` | 單一 `.md` 檔，開頭可標 `target` | `.agsy/workflows/<bucket>/` |
+| rules | `rules/` | 單一 `.md` 檔 | `.agsy/rules/` |
+| skills | `skills/` | **目錄**，內含 `SKILL.md` | `.agsy/skills/` |
+| workflows | `workflows/` | 單一 `.md` 檔，開頭可標 `target` | `.agsy/workflows/<bucket>/` |
 
 一個典型的來源長這樣：
 
 ```
 ~/all-ai-lib/
-├── rule/
+├── rules/
 │   ├── python-style.md
 │   └── git-commit.md
-├── skill/
+├── skills/
 │   └── code-review/
 │       ├── SKILL.md
 │       └── scripts/…
-└── workflow/
+└── workflows/
     └── release.md        （front-matter: target: claude）
 ```
+
+## 目前支援的工具與對應資料夾
+
+掛載之後，三種類別會出現在各工具的哪個位置？內建適配器目前支援三個工具，對應關係如下（細節與自訂方式見[適配器說明](05-adapters.md)）：
+
+| 工具 | 掛載目錄 | rules | skills | workflows |
+|------|----------|-------|--------|-----------|
+| Claude Code | `.claude/` | `.claude/rules` | `.claude/skills` | `.claude/commands`（成為斜線指令） |
+| OpenAI Codex | `.codex/` | —（不掛載） | —（不掛載） | `.codex/prompts` |
+| Antigravity | `.agents/` | `.agents/rules` | `.agents/skills` | `.agents/workflows` |
+
+表格裡的每一格都是一個**連結**，實際內容都在 `.agsy/` 裡；Codex 依其慣例只讀 prompts，所以 rules 和 skills 沒有掛載位置（`init` 時若只勾 Codex 會特別警告這件事）。
+
+## 來源目錄必須照規範命名
+
+不管是個人共用庫（`~/all-ai-lib`）還是專案內的庫（`./repo-ai-lib`），**裡面的子目錄都必須叫 `rules/`、`skills/`、`workflows/`**（複數）——agsy 掃描時只認這三個名字，拼錯或用別的名字（如 `rule/`、`my-rules/`）的目錄會被直接跳過，檔案就「神祕消失」了。
+
+```
+✔ 正確                          ✘ 掃不到
+~/all-ai-lib/rules/…            ~/all-ai-lib/rule/…
+~/all-ai-lib/skills/…           ~/all-ai-lib/Skill/…
+~/all-ai-lib/workflows/…        ~/all-ai-lib/wf/…
+```
+
+> 如果你的既有目錄真的叫別的名字，不必搬家：可以在 `agsy.yaml` 用 `build.categories.<類別>.from` 改掉掃描的子目錄名，詳見[設定檔說明](03-config.md)。不確定有沒有掃到時，跑 `agsy doctor` 立刻見分曉。
 
 ## workflows 的分流：bucket 與 routing
 
@@ -145,9 +176,9 @@ rules 和 skills 建置後**所有工具讀同一份**；workflows 不一樣—�
 分流的依據，是 workflow 檔案開頭 front-matter 的 `target` 標記：
 
 ```
- workflow/release.md （target: claude）          ──▶  只進 claude 桶 → 只有 Claude Code 看得到
- workflow/deploy.md  （target: [claude, codex]） ──▶  兩個桶各放一份 → 兩個工具都看得到
- workflow/note.md    （沒寫 target）             ──▶  依 route.default 的設定決定去向
+ workflows/release.md （target: claude）          ──▶  只進 claude 桶 → 只有 Claude Code 看得到
+ workflows/deploy.md  （target: [claude, codex]） ──▶  兩個桶各放一份 → 兩個工具都看得到
+ workflows/note.md    （沒寫 target）             ──▶  依 route.default 的設定決定去向
 ```
 
 `target` 的寫法就是在檔案最上方：

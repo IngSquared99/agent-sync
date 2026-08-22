@@ -18,9 +18,9 @@ build:
   out: .agsy                  # 必須在專案目錄內（apply 會整個清空重建）
 
   categories:                 # 來源子目錄 → 產物子目錄（三個 to 不可相同）
-    rules:     { from: rule, to: rules }
-    skills:    { from: skill, to: skills }
-    workflows: { from: workflow, to: workflows }
+    rules:     { from: rules, to: rules }
+    skills:    { from: skills, to: skills }
+    workflows: { from: workflows, to: workflows }
 
   on_conflict:                # 同名處理：first / rename / error（每類別必填）
     rules:     rename
@@ -61,7 +61,7 @@ mount:
 
 - 有序陣列，**順序就是優先權**：`on_conflict: first` 時，同名項目保留排在前面的來源那份。
 - 常見組合：`[~/共用庫, ./專案庫]`——基底放共用庫、專案特化放專案庫。
-- 來源缺少某個類別子目錄（例如沒有 `workflow/`）是正常的，不會報錯。
+- 來源缺少某個類別子目錄（例如沒有 `workflows/`）是正常的，不會報錯。
 - 整個來源路徑不存在時：`plan` 仍可預覽（會標明結果不完整），但 `apply` 會**拒絕執行**——不從殘缺的來源清單重建，避免把還在的內容清掉。
 
 ### 來源標籤（source tag）
@@ -83,9 +83,9 @@ mount:
 
 ```yaml
 categories:
-  rules:     { from: rule, to: rules }
-  skills:    { from: skill, to: skills }
-  workflows: { from: workflow, to: workflows }
+  rules:     { from: rules, to: rules }
+  skills:    { from: skills, to: skills }
+  workflows: { from: workflows, to: workflows }
 ```
 
 - `from`：來源目錄下要掃描的子目錄名。

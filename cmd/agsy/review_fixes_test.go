@@ -32,7 +32,7 @@ func TestBarePromoteNonInteractiveCancels(t *testing.T) {
 	proj := setupApplied(t)
 
 	write(t, filepath.Join(proj, ".agsy", "rules", "python-style.md"), "# 風格\n## AI 加寫\n")
-	before, err := os.ReadFile(filepath.Join(proj, "repo-ai-lib", "rule", "python-style.md"))
+	before, err := os.ReadFile(filepath.Join(proj, "repo-ai-lib", "rules", "python-style.md"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -40,7 +40,7 @@ func TestBarePromoteNonInteractiveCancels(t *testing.T) {
 	if code := cmdPromote(nil); code == 0 {
 		t.Fatal("bare promote must cancel in a non-interactive environment without --yes")
 	}
-	after, err := os.ReadFile(filepath.Join(proj, "repo-ai-lib", "rule", "python-style.md"))
+	after, err := os.ReadFile(filepath.Join(proj, "repo-ai-lib", "rules", "python-style.md"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -66,7 +66,7 @@ func TestPromoteThenEditAgainDoesNotDeadlock(t *testing.T) {
 	if code := cmdPromote([]string{"rules/python-style.md"}); code != 0 {
 		t.Fatal("second promote must succeed — the only source change was promote's own write")
 	}
-	src, err := os.ReadFile(filepath.Join(proj, "repo-ai-lib", "rule", "python-style.md"))
+	src, err := os.ReadFile(filepath.Join(proj, "repo-ai-lib", "rules", "python-style.md"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -96,7 +96,7 @@ func TestPromoteAcceptsIdenticalMultiCopies(t *testing.T) {
 	if code := cmdPromote([]string{"workflows/release-note.md"}); code != 0 {
 		t.Fatal("identical multi-copy edits must be treated as a single change")
 	}
-	src, err := os.ReadFile(filepath.Join(proj, "repo-ai-lib", "workflow", "release-note.md"))
+	src, err := os.ReadFile(filepath.Join(proj, "repo-ai-lib", "workflows", "release-note.md"))
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -299,9 +299,9 @@ func renderConfig(sources []string, out string, strategies map[string]string,
 	b.WriteString("  out: " + out + i18n.T("                   # must be inside the project directory (apply wipes it entirely)\n\n"))
 	b.WriteString(i18n.T("  categories:                 # source subdir → output subdir (the three to values must all differ)\n"))
 	cats := map[string]config.Category{
-		"rules":     {From: "rule", To: "rules"},
-		"skills":    {From: "skill", To: "skills"},
-		"workflows": {From: "workflow", To: "workflows"},
+		"rules":     {From: "rules", To: "rules"},
+		"skills":    {From: "skills", To: "skills"},
+		"workflows": {From: "workflows", To: "workflows"},
 	}
 	if categories != nil {
 		cats = categories // loaded configs are already default-filled

@@ -121,9 +121,9 @@ func (c *Config) applyDefaults() {
 		c.Build.Categories = map[string]Category{}
 	}
 	def := map[string]Category{
-		"rules":     {From: "rule", To: "rules"},
-		"skills":    {From: "skill", To: "skills"},
-		"workflows": {From: "workflow", To: "workflows"},
+		"rules":     {From: "rules", To: "rules"},
+		"skills":    {From: "skills", To: "skills"},
+		"workflows": {From: "workflows", To: "workflows"},
 	}
 	for k, v := range def {
 		cur, ok := c.Build.Categories[k]

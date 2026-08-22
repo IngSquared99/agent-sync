@@ -33,14 +33,14 @@ agsy <指令>      # 帶參數：直接執行該指令（適合熟手與腳本�
 先準備至少一個來源。常見的組合是「個人共用庫 + 專案內庫」：
 
 ```sh
-mkdir -p ~/all-ai-lib/rule ~/all-ai-lib/skill ~/all-ai-lib/workflow
-mkdir -p ./repo-ai-lib/rule ./repo-ai-lib/skill ./repo-ai-lib/workflow
+mkdir -p ~/all-ai-lib/rules ~/all-ai-lib/skills ~/all-ai-lib/workflows
+mkdir -p ./repo-ai-lib/rules ./repo-ai-lib/skills ./repo-ai-lib/workflows
 ```
 
 放一點內容進去，例如：
 
 ```sh
-cat > ~/all-ai-lib/rule/python-style.md <<'EOF'
+cat > ~/all-ai-lib/rules/python-style.md <<'EOF'
 # Python 風格
 - 用 ruff 排版
 - 函式一律加 type hints
@@ -49,9 +49,9 @@ EOF
 
 三個子目錄的格式要求（不合規的檔案會被略過，`plan` / `doctor` 會列出原因）：
 
-- `rule/`：單一 `.md` 檔。
-- `skill/`：**目錄**，裡面必須有 `SKILL.md`；目錄內不能含符號連結。
-- `workflow/`：單一 `.md` 檔，front-matter 可標 `target:` 決定分流到哪些工具。
+- `rules/`：單一 `.md` 檔。
+- `skills/`：**目錄**，裡面必須有 `SKILL.md`；目錄內不能含符號連結。
+- `workflows/`：單一 `.md` 檔，front-matter 可標 `target:` 決定分流到哪些工具。
 
 ## B-4. Step 1：初始化 `agsy init`
 

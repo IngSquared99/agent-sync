@@ -53,7 +53,7 @@ func TestLoadOK(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if cfg.Build.Categories["rules"].From != "rule" {
+	if cfg.Build.Categories["rules"].From != "rules" {
 		t.Errorf("categories defaults not filled in: %+v", cfg.Build.Categories)
 	}
 	if filepath.Base(cfg.OutDir()) != ".agsy" {
