@@ -43,6 +43,11 @@ type LocalChange struct {
 	SrcDeleted  bool     // source file was deleted (promote recreates it; apply drops the item)
 	SrcRootGone bool     // whole source root is missing (promote refuses)
 	Files       []string // directory items: the files that actually changed on the output side
+	// Symlinks lists symbolic links found on the artifact side (relative to
+	// the item). The output directory is the layer mounted AI tools can write
+	// to; a link there could smuggle files from outside the source (e.g. a
+	// private key) into the write-back, so promote always refuses.
+	Symlinks []string
 }
 
 // GoneOut means an output copy has disappeared (deleted manually or by an
@@ -141,8 +146,15 @@ func Collect(cfg *config.Config, m *build.Manifest) (*Report, error) {
 		var changedHashes []string
 		var changedFiles []string
 		var gone []string
+		var symlinks []string
 		for _, rel := range it.OutPaths {
 			p := filepath.Join(out, filepath.FromSlash(rel))
+			// Check with Lstat before Stat: a broken link looks "missing"
+			// to Stat, but it is still a link that must be reported, not a
+			// deleted artifact.
+			if rel, found := build.FirstSymlinkWithin(p); found {
+				symlinks = append(symlinks, rel)
+			}
 			if _, err := os.Stat(p); err != nil {
 				// The output copy was deleted: not a local change (no content
 				// to write back), but it must be reported — silently skipping
@@ -177,7 +189,7 @@ func Collect(cfg *config.Config, m *build.Manifest) (*Report, error) {
 			for _, ch := range changedHashes {
 				distinct[ch] = true
 			}
-			lc := LocalChange{Item: it, OutPath: changed[0], Multiple: len(distinct) > 1, Files: changedFiles}
+			lc := LocalChange{Item: it, OutPath: changed[0], Multiple: len(distinct) > 1, Files: changedFiles, Symlinks: symlinks}
 			// Concurrent source-side changes carry three distinct marks: content
 			// changed (manual merge), file deleted (promote recreates it explicitly),
 			// root missing (promote refuses).

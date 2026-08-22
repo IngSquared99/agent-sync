@@ -312,5 +312,7 @@
   "✘ the following source paths do not exist; apply refuses to rebuild from an incomplete source list:": "✘ 以下來源路徑不存在,apply 拒絕以殘缺的來源清單重建:",
   "✘ the source of %s/%s has changed too (both sides modified); overwriting would clobber the source's new content, compare manually\n": "✘ %s/%s 的來源同時也變更了(雙邊都動),直接覆蓋會蓋掉來源的新內容,請手動比對\n",
   "✘ the source root of %s/%s is missing (repo not cloned? disk not mounted?); fix the source path before writing back\n": "✘ %s/%s 的來源根不存在(還沒 clone?磁碟未掛載?),請先修好來源路徑再回寫\n",
-  "✘ workflow routing problems (front-matter target); fix these files first:": "✘ workflow 路由有問題(front-matter 的 target),請先修正以下檔案:"
+  "✘ workflow routing problems (front-matter target); fix these files first:": "✘ workflow 路由有問題(front-matter 的 target),請先修正以下檔案:",
+  "✘ %s/%s contains a symbolic link on the artifact side (%s); refusing to write it back — replace the link with a real file first\n": "✘ %s/%s 的產物端含有符號連結(%s),拒絕寫回——請先把連結換成真實檔案\n",
+  "   ✘ contains a symbolic link on the artifact side; promote refuses it (a link could smuggle files from outside the source)": "   ✘ 產物端含有符號連結,promote 會拒絕(連結可能夾帶來源以外的檔案)"
 }

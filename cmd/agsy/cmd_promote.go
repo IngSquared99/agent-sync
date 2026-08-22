@@ -277,6 +277,15 @@ func resolvePromoteDest(cfg *config.Config, it build.ManifestItem, toRaw string)
 // once more (--all already confirmed at the listing stage).
 func promoteOne(cfg *config.Config, out string, m *build.Manifest, lc state.LocalChange, toRaw string, confirm bool) int {
 	it := lc.Item
+	// Symbolic link on the artifact side: writing back would turn the link's
+	// external target (e.g. a private key) into a real file in the source,
+	// which the next apply builds and mounts for every tool — exactly the
+	// smuggling path build's Accepts blocks. Refuse the whole item rather
+	// than skipping the link: a partial write-back leaves the baselines wrong.
+	if len(lc.Symlinks) > 0 {
+		fmt.Printf(i18n.T("✘ %s/%s contains a symbolic link on the artifact side (%s); refusing to write it back — replace the link with a real file first\n"), it.Category, it.Name, lc.Symlinks[0])
+		return 1
+	}
 	if lc.Multiple {
 		fmt.Printf(i18n.T("✘ %s/%s has multiple bucket copies changed to different contents; compare and resolve manually\n"), it.Category, it.Name)
 		return 1
@@ -422,6 +431,11 @@ func copyTree(src, dst string) error {
 		if err != nil {
 			return err
 		}
+		// Second line of defense (promoteOne already refused based on the
+		// status detection): never copy a symbolic link's target content.
+		if d.Type()&os.ModeSymlink != 0 {
+			return fmt.Errorf(i18n.T("refusing to copy symbolic link %s"), p)
+		}
 		rel, _ := filepath.Rel(src, p)
 		t := filepath.Join(dst, rel)
 		if d.IsDir() {
@@ -432,11 +446,16 @@ func copyTree(src, dst string) error {
 }
 
 // copyFile2 is the write-back copy that also preserves the source's permissions
-// (otherwise promote would clobber the source's executable bits)
+// (otherwise promote would clobber the source's executable bits).
+// Lstat inspects the source entry itself: a symlink is refused outright,
+// its target is never read.
 func copyFile2(src, dst string) error {
-	st, err := os.Stat(src)
+	st, err := os.Lstat(src)
 	if err != nil {
 		return err
+	}
+	if st.Mode()&os.ModeSymlink != 0 {
+		return fmt.Errorf(i18n.T("refusing to copy symbolic link %s"), src)
 	}
 	raw, err := os.ReadFile(src)
 	if err != nil {

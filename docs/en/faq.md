@@ -150,3 +150,5 @@ agsy **never deletes real directories/files it did not create**. Move the existi
 ### Q25: Could agsy copy out files that symlinks in my sources point to (e.g. a private key)?
 
 No. Scanning never collects symbolic links (including inside skill directories — a skill containing a link is skipped entirely), and the copy phase refuses links as a second line of defense. This is deliberate: the artifacts are mounted for every tool to read, and a link must never smuggle in files from outside a source.
+
+The same rule applies in the **opposite direction**: if a symbolic link appears on the artifact side (e.g. an AI tool created one under `.claude/`), `status` flags the item and `promote` refuses to write it back — otherwise a link's target content would become a real file in your source and be built and mounted on the next apply.

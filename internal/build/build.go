@@ -146,7 +146,7 @@ func Accepts(cat, path string, isDir bool) (bool, string) {
 		}
 		// The directory itself is real, but any entry inside could still be a
 		// link; reject the whole skill so nothing smuggled reaches the output.
-		if rel, found := firstSymlinkWithin(path); found {
+		if rel, found := FirstSymlinkWithin(path); found {
 			return false, fmt.Sprintf(i18n.T("contains a symbolic link (%s); the skill is not collected"), rel)
 		}
 		return true, ""
@@ -827,9 +827,14 @@ func copyFile(src, dst string) error {
 	return os.Chmod(dst, perm)
 }
 
-// firstSymlinkWithin walks dir and returns the first symbolic link found, as a
-// path relative to dir. WalkDir does not follow links, so the walk is safe.
-func firstSymlinkWithin(dir string) (string, bool) {
+// FirstSymlinkWithin returns the first symbolic link found under path
+// (path itself included), relative to path. A path that is itself a link
+// yields "."; single files work too. WalkDir does not follow links, so the
+// walk is safe. Shared by build's Accepts and promote's artifact-side guard.
+func FirstSymlinkWithin(dir string) (string, bool) {
+	if fi, err := os.Lstat(dir); err == nil && fi.Mode()&os.ModeSymlink != 0 {
+		return ".", true
+	}
 	found := ""
 	_ = filepath.WalkDir(dir, func(p string, d os.DirEntry, err error) error {
 		if err != nil {

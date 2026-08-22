@@ -105,6 +105,9 @@ func cmdStatus(withMenu bool) int {
 			if lc.SrcRootGone {
 				extra += i18n.T("   ⚠ the whole source root is missing; promote is blocked")
 			}
+			if len(lc.Symlinks) > 0 {
+				extra += i18n.T("   ✘ contains a symbolic link on the artifact side; promote refuses it (a link could smuggle files from outside the source)")
+			}
 			files := ""
 			if n := len(lc.Files); n > 0 {
 				files = fmt.Sprintf(i18n.T("   %d files changed"), n)

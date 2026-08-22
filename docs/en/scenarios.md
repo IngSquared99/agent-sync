@@ -98,6 +98,7 @@ Beyond the content judgments in the matrix, promote checks **where it writes** w
 | destination lock | writes only into the item's **own slot**: `<configured source>/<category subdir>/<original name>` — a tampered manifest cannot redirect the write |
 | `--to` allowlist | only sources **configured** in `agsy.yaml`; anywhere else means leaving agsy's management — refused |
 | no writing through symlinks | a symlink at the destination is refused outright |
+| no symlinks on the artifact side | an item whose artifact copy is, or contains, a symbolic link is refused entirely (`status` flags it) — a link could smuggle files from outside the source into the write-back |
 | extra confirmation outside the project | a destination in a shared library affects every project using it — asked once more |
 | `--all --to` unsupported | batch redirection would desync sources from the manifest |
 | renamed-skill name restore | the `SKILL.md` `name` is restored to the original on write-back (`-fromlib-…` belongs only to the artifacts) |
