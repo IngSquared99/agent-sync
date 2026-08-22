@@ -639,7 +639,3 @@ Everything beyond installation and the quick start lives on the documentation si
 | [Adapters](https://ingsquared99.github.io/agent-sync/#/en/adapters) | built-in tool presets and custom mounts |
 | [Scenario Guide](https://ingsquared99.github.io/agent-sync/#/en/scenarios) | apply / promote behavior in every situation |
 | [FAQ](https://ingsquared99.github.io/agent-sync/#/en/faq) | common questions from the user's point of view |
-
----
-
-<sub>This README is assembled from [docs/en/](docs/en/) by `scripts/genreadme`; edit the docs sources, not this file.</sub>

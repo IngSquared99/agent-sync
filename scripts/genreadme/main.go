@@ -35,7 +35,6 @@ type language struct {
 	out     string // output README path
 	header  string
 	deeper  string // the "going deeper" section
-	footer  string
 	navDrop string // prefix of chapter-navigation lines to drop
 }
 
@@ -56,7 +55,6 @@ func main() {
 			b.WriteString(chapterSep)
 		}
 		b.WriteString(l.deeper)
-		b.WriteString(l.footer)
 		if err := os.WriteFile(l.out, []byte(b.String()), 0o644); err != nil {
 			fmt.Fprintln(os.Stderr, "genreadme:", err)
 			os.Exit(1)
@@ -120,7 +118,6 @@ var languages = []language{
 			"| [Adapters](" + site + "/en/adapters) | built-in tool presets and custom mounts |\n" +
 			"| [Scenario Guide](" + site + "/en/scenarios) | apply / promote behavior in every situation |\n" +
 			"| [FAQ](" + site + "/en/faq) | common questions from the user's point of view |\n",
-		footer: "\n---\n\n<sub>This README is assembled from [docs/en/](docs/en/) by `scripts/genreadme`; edit the docs sources, not this file.</sub>\n",
 	},
 	{
 		dir:     "zh-TW",
@@ -138,6 +135,5 @@ var languages = []language{
 			"| [適配器](" + site + "/zh-TW/adapters) | 內建工具範本與自訂掛載 |\n" +
 			"| [情境全覽](" + site + "/zh-TW/scenarios) | apply / promote 在每種情境下的行為 |\n" +
 			"| [Q&A 常見問題](" + site + "/zh-TW/faq) | 以使用者角度整理的常見問題 |\n",
-		footer: "\n---\n\n<sub>本 README 由 [docs/zh-TW/](docs/zh-TW/) 經 `scripts/genreadme` 自動組裝；要修改內容請改 docs 來源檔。</sub>\n",
 	},
 }

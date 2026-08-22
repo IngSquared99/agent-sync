@@ -636,7 +636,3 @@ agsy apply --yes
 | [適配器](https://ingsquared99.github.io/agent-sync/#/zh-TW/adapters) | 內建工具範本與自訂掛載 |
 | [情境全覽](https://ingsquared99.github.io/agent-sync/#/zh-TW/scenarios) | apply / promote 在每種情境下的行為 |
 | [Q&A 常見問題](https://ingsquared99.github.io/agent-sync/#/zh-TW/faq) | 以使用者角度整理的常見問題 |
-
----
-
-<sub>本 README 由 [docs/zh-TW/](docs/zh-TW/) 經 `scripts/genreadme` 自動組裝；要修改內容請改 docs 來源檔。</sub>
