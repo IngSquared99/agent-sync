@@ -10,7 +10,7 @@ agsy plan                   預覽 build + mount 結果（唯讀）
 agsy apply                  前置檢查 → 確認 → 清空重建 → 掛載
 agsy status                 三方比對並報告落差（唯讀；exit 0=同步 1=有落差）
 agsy promote [item] [--to <source>] [--all]
-                            把產物側的改動寫回來源
+                            把產物端的改動寫回來源
 agsy clean                  移除連結與產物（反安裝）
 agsy version                版本資訊
 agsy help                   說明文字
@@ -29,7 +29,7 @@ agsy help                   說明文字
 ```
 第一次        init → doctor → plan → apply
 改了來源      (plan) → apply
-改了掛載側    status → promote → apply
+改了產物端    status → promote → apply
 不確定狀態    status
 要移除        clean
 ```
@@ -136,7 +136,7 @@ exit code：有衝突／撞名／路由錯誤時為 1（可用於 CI 守門）�
 
 ### 2. 確認本機改動（每次必查）
 
-- manifest 可讀：逐項比對。發現**本機改動**（產物被改、還沒 promote）或 **untracked 檔案**（掛載側新增、重建會刪掉）就列出清單並詢問「捨棄並重建？」。
+- manifest 可讀：逐項比對。發現**本機改動**（產物被改、還沒 promote）或 **untracked 檔案**（產物端新增、重建會刪掉）就列出清單並詢問「捨棄並重建？」。
 - 產物目錄存在但 manifest 壞掉／被刪：無法得知裡面有沒有你的改動，一律先問。
 - 產物目錄不存在：第一次建置，不會蓋掉任何東西，直接進行。
 
@@ -149,6 +149,8 @@ exit code：有衝突／撞名／路由錯誤時為 1（可用於 CI 守門）�
 ### 4. 孤兒連結回報
 
 `apply` 會記錄本次建立的連結。若之前的 apply 建過、但目前設定已不再引用的連結（例如你從 mount 拿掉了某個工具），會列出提醒——**apply 只回報不刪除**；要移除請手動刪或跑 `agsy clean`。
+
+> 兩端各種變動組合（誰改了、誰刪了、誰新增）下 apply 的行為，完整對照表見[情境全覽](07-scenarios.md)。
 
 ---
 
@@ -164,7 +166,7 @@ exit code：有衝突／撞名／路由錯誤時為 1（可用於 CI 守門）�
   - 「來源檔已刪除 ⚠」（apply 後該項目會消失）；
   - 「來源路徑整個不見 ⚠」（共用庫沒 clone？外接碟沒掛？——是路徑不見，不是檔案被刪，**先修路徑再說，別急著 apply**）。
 - `new`：來源有新檔案，還沒進產物。
-- `missing artifacts`：產物側的複本被刪了（掛載側讀不到；apply 可重建）。
+- `missing artifacts`：產物端的複本被刪了（工具透過連結讀不到；apply 可重建）。
 
 **② 產物 → sources 方向（promote 負責的方向）**
 
@@ -173,7 +175,7 @@ exit code：有衝突／撞名／路由錯誤時為 1（可用於 CI 守門）�
   - ⚠ 多個 bucket 複本被改成不同內容；
   - ⚠ 來源檔已刪除（promote 會重建它）；
   - ⚠ 來源根目錄不見（promote 會拒絕）。
-- `untracked`：掛載側新增、manifest 不認識的檔案。**promote 寫不回去（沒有原始位置）、apply 會刪掉**——要保留就搬進某個來源目錄再 apply。
+- `untracked`：產物端新增、manifest 不認識的檔案。**promote 寫不回去（沒有原始位置）、apply 會刪掉**——要保留就搬進某個來源目錄再 apply。
 
 **③ mounts**
 
@@ -192,7 +194,7 @@ exit code：有衝突／撞名／路由錯誤時為 1（可用於 CI 守門）�
 
 ## C-2-8. `agsy promote`
 
-把產物側（＝掛載側，工具實際讀寫的位置）的改動**寫回來源**。四種用法：
+把產物端（工具透過掛載連結實際讀寫的檔案）的改動**寫回來源**。四種用法：
 
 ```sh
 agsy promote                          # 互動：多選要寫回的項目，每項可改寫回目標
@@ -219,8 +221,10 @@ agsy promote --all                    # 全部寫回各自的原始來源（先�
 
 - 被改名過的 skill：寫回時自動把 `SKILL.md` 的 `name` **還原成原始名稱**（`-fromlib-…` 是只存在於產物的名字，不能洩漏回來源）。
 - workflow 有多個 bucket 複本時：寫回的內容同步到其他複本，保持一致。
-- 更新 manifest 的基準雜湊：status 不會再對同一份改動嘮叨；但「來源已更新」（behind）會開始顯示，提醒你接著跑 `apply`。
+- 更新 manifest 的基準雜湊：這筆改動回到無落差，status 不再列出；下一步執行 `apply` 完成重建。
 - 用 `--to` 改道時會提醒：**舊來源的檔案還在**，下次建置會同時收到新舊兩份同名項目——確認新位置沒問題後請手動刪掉舊的。
+
+> 兩端各種變動組合下 promote 何時寫回、何時拒絕，完整對照表見[情境全覽](07-scenarios.md)。
 
 ---
 

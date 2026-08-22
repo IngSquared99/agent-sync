@@ -222,6 +222,7 @@
   "first    keep only the copy from the higher-priority source, discard the rest": "first    只留優先來源的那份,其餘丟棄",
   "front-matter parse failed: %w": "front-matter 解析失敗: %w",
   "init     configure (enters edit mode if config exists)": "init     設定(已存在時進入修改模式)",
+  "manifest contains an invalid output path %q; it may be tampered with — remove the output directory and run agsy apply to rebuild": "manifest 內含不合法的輸出路徑 %q,可能已被竄改——請移除產物目錄後執行 agsy apply 重建",
   "manifest is corrupted: %w": "manifest 損毀: %w",
   "manifest not found; run agsy apply first to complete the initial build": "找不到 manifest,請先 agsy apply 完成首次建置",
   "manifest version %d exceeds the maximum %d supported by this agsy, please upgrade agsy (or remove the output directory and apply again)": "manifest 版本 %d 高於本版 agsy 支援的上限 %d,請升級 agsy(或移除產物目錄重新 apply)",

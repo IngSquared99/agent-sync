@@ -13,11 +13,12 @@
 | C-1. 設定檔 | [03-config.md](03-config.md) | agsy.yaml 每個欄位的完整說明與安全規則 |
 | C-2. 指令說明 | [04-commands.md](04-commands.md) | 指令總覽 + 各指令細節與使用情境 |
 | C-3. 適配器 | [05-adapters.md](05-adapters.md) | 內建適配器（Claude Code / Codex / Antigravity）與自訂掛載 |
+| C-4. 情境全覽 | [07-scenarios.md](07-scenarios.md) | apply / promote 在每種兩端變動組合下的行為與防呆 |
 | D. Q&A | [06-faq.md](06-faq.md) | 以使用者角度整理的常見問題 |
 
 ## 建議閱讀路徑
 
 - **第一次使用**：00 → 01 → 02，跑完 `init → plan → apply` 後再回頭看 03、04。
 - **想搞懂設定檔每一行**：03。
-- **某個指令的行為跟預期不同**：04 對應指令的小節，以及 06 的 Q&A。
+- **某個指令的行為跟預期不同**：04 對應指令的小節、07 的情境全覽，以及 06 的 Q&A。
 - **想接新的 AI 工具**：05。

@@ -8,7 +8,7 @@ import (
 
 // OS metadata files (.DS_Store etc.) inside the output must not be reported
 // as untracked: they are never produced by build and never collected from
-// sources, so nagging about them would make every macOS status noisy.
+// sources, so reporting them would make every macOS status noisy.
 func TestHiddenFilesAreNotUntracked(t *testing.T) {
 	cfg, m, _, _ := setup(t)
 	out := cfg.OutDir()

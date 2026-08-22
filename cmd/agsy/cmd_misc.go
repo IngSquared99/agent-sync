@@ -105,9 +105,8 @@ func cmdDoctor() int {
 				warns++
 				continue
 			}
-			// The count must follow the same inclusion rules as build; otherwise
-			// doctor says 3 while only 1 actually gets picked up, and the user
-			// can't tell where the other two went (§12-8)
+			// The count must follow the same inclusion rules as build so the
+			// reported numbers match what a build would collect (§12-8)
 			n := 0
 			var ignored []string
 			for _, e := range entries {
@@ -151,7 +150,7 @@ func cmdDoctor() int {
 			warns++
 		}
 	}
-	// Link capability: actually create one and delete it, not just print a claim
+	// Link capability is verified by creating and removing a real link
 	if err := mount.Probe(cfg.BaseDir); err != nil {
 		fmt.Printf(i18n.T("Checking link capability ................ ✘ cannot create directory link: %v\n"), err)
 		errs++

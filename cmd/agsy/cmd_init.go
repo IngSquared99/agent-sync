@@ -19,11 +19,9 @@ import (
 // comments during regeneration — that risk is covered by keeping agsy.yaml in
 // version control, and the pre-write diff is the last manual checkpoint.
 func cmdInit(argSources []string) int {
-	// Non-interactive gate (§12-19): the core of init is "the strategy must be
-	// explicitly chosen by the user" (§12-1). When nobody can answer and --yes
-	// is absent, silently writing a config with defaults would be making the
-	// decision on the user's behalf, so always cancel; scripts must state
-	// --yes explicitly (= explicit consent to the recommended defaults).
+	// Non-interactive gate (§12-19): conflict strategies require an explicit
+	// choice (§12-1). Without a TTY and without --yes the run is cancelled;
+	// --yes is the explicit consent to the recommended defaults.
 	if !prompt.IsStdinTTY() && !prompt.AssumeYes {
 		fmt.Println(i18n.T("✘ init requires interactive prompts (the same-name strategy must be chosen by you explicitly)."))
 		fmt.Println(i18n.T("  In non-interactive environments add --yes to accept the recommended defaults (rules=rename, skills=error, workflows=rename)."))
@@ -106,9 +104,8 @@ func cmdInit(argSources []string) int {
 		fmt.Println(i18n.T("✘ At least one mount target is required"))
 		return 1
 	}
-	// Mount entries the user added manually in agsy.yaml that don't belong to
-	// any adapter are kept as is. Washing them away during regeneration would
-	// silently disconnect tools the user wired up themselves.
+	// Mount entries not matching any built-in adapter are kept as is;
+	// regeneration must not silently drop manually configured mounts.
 	var customMounts []config.MountCfg
 	if cur != nil {
 		known := map[string]bool{}
@@ -253,8 +250,7 @@ func cmdInit(argSources []string) int {
 	warnUnmountedCategories(newRaw, adapters, picked, customMounts)
 	// Ask on both first run and edit mode: when edit mode changes build.out,
 	// the new directory likewise shouldn't be version-controlled.
-	// offerGitignore already guards against duplicates — it returns silently
-	// when the entry exists, so it won't nag every time.
+	// offerGitignore returns silently when the entry already exists.
 	offerGitignore(wd, out)
 	fmt.Println(i18n.T("  Next: agsy plan to preview → agsy apply to execute"))
 	return 0
@@ -268,10 +264,9 @@ func askSources() []string {
 	for i := 1; ; i++ {
 		s := prompt.Input(fmt.Sprintf(i18n.T("  source %d"), i), "")
 		if s == "" {
-			// Only re-ask when someone can actually answer; re-asking in
-			// non-interactive mode (EOF) would become an infinite loop, so
-			// hand back an empty list for the caller to wrap up (init already
-			// guards against empty sources).
+			// Re-ask only on a TTY; in non-interactive mode (EOF) re-asking
+			// would loop forever, so return the empty list to the caller
+			// (init rejects empty sources).
 			if len(sources) == 0 && prompt.IsStdinTTY() {
 				fmt.Println(i18n.T("  At least one source path is required, please enter one (or Ctrl+C to quit)"))
 				i--
@@ -422,8 +417,8 @@ func printDiff(oldRaw, newRaw string) {
 	}
 }
 
-// offerGitignore: build outputs are rebuildable and shouldn't be version-controlled;
-// rather than telling users to add the entry themselves in a README, ask on the spot.
+// offerGitignore adds the build output directory to .gitignore after
+// confirmation: outputs are rebuildable and must not be version-controlled.
 func offerGitignore(wd, out string) {
 	entry := strings.TrimSuffix(strings.TrimPrefix(out, "./"), "/") + "/"
 	gi := filepath.Join(wd, ".gitignore")

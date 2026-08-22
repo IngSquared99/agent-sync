@@ -77,8 +77,8 @@ func Collect(cfg *config.Config, m *build.Manifest) (*Report, error) {
 
 	// Expand sources first. "The whole source path is missing" (shared repo
 	// not cloned, external disk not mounted) and "a single file was deleted"
-	// are different things; reporting both as "source deleted" would make
-	// users think their files are gone.
+	// are different conditions and are reported separately: a missing root is
+	// an environment problem, not deleted files.
 	sources, err := build.ExpandSources(cfg)
 	if err != nil {
 		return nil, err
@@ -172,7 +172,7 @@ func Collect(cfg *config.Config, m *build.Manifest) (*Report, error) {
 			// Multiple means the copies diverged from EACH OTHER, not merely that
 			// more than one copy changed: identical edits across buckets are one
 			// change (write-back syncs every copy anyway). Only genuinely
-			// different contents need a human to pick a winner.
+			// different contents require manual resolution.
 			distinct := map[string]bool{}
 			for _, ch := range changedHashes {
 				distinct[ch] = true
@@ -215,7 +215,7 @@ func Collect(cfg *config.Config, m *build.Manifest) (*Report, error) {
 		}
 		// Hidden files (.DS_Store and friends) are never build outputs and are
 		// never collected from sources (Accepts skips the same dot prefix);
-		// reporting them as untracked would nag macOS users on every status.
+		// reporting them as untracked would flag files like .DS_Store on every run.
 		if strings.HasPrefix(d.Name(), ".") {
 			return nil
 		}

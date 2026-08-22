@@ -39,9 +39,8 @@ type LinkPlan struct {
 
 // Inspect reports the current state of every mount target (shared by
 // plan / status / doctor, read-only).
-// Knowing "is it a link" is not enough: a link pointing elsewhere, or whose
-// target no longer exists, is as good as not mounted from the user's point
-// of view — those cases must be told apart (§12-12).
+// A link pointing elsewhere, or whose target no longer exists, is effectively
+// unmounted; these states are reported separately (§12-12).
 func Inspect(cfg *config.Config) ([]LinkPlan, error) {
 	out := cfg.OutDir()
 	var plans []LinkPlan
@@ -71,9 +70,9 @@ func Inspect(cfg *config.Config) ([]LinkPlan, error) {
 				lp.State = Missing
 			case isLink(fi, linkPath):
 				lp.State = IsLink
-				// Does it point to the right place? Readlink can fail for
-				// junctions on some platforms; when it cannot be read, don't
-				// jump to conclusions — keep only the broken-link check below.
+				// Readlink can fail for junctions on some platforms; an
+				// unreadable target is not classified as stale — only the
+				// broken-link check below still applies.
 				if cur, err := os.Readlink(linkPath); err == nil {
 					lp.Current = filepath.ToSlash(cur)
 					resolved := cur
@@ -103,8 +102,8 @@ func Inspect(cfg *config.Config) ([]LinkPlan, error) {
 
 // IsManagedLink reports whether path is a link created by this tool: it must
 // be a link and it must resolve into the build output directory. Junctions
-// whose target cannot be read are conservatively not claimed (never delete on
-// a guess). This is the safety check every consumer of manifest.Mounts must
+// whose target cannot be read are conservatively not claimed (never delete
+// on an unverified target). This is the safety check every consumer of manifest.Mounts must
 // pass a path through — the manifest itself is untrusted.
 func IsManagedLink(linkPath, outDir string) bool {
 	fi, err := os.Lstat(linkPath)
@@ -123,11 +122,10 @@ func IsManagedLink(linkPath, outDir string) bool {
 	return cur == out || config.IsAncestor(out, cur)
 }
 
-// Probe actually tests whether this machine can create directory links (used
-// by doctor): it creates a temporary directory and link under baseDir, and
-// cleans them up immediately on success.
-// "Windows junctions need no privileges" is a claim; actually creating one
-// is the real check.
+// Probe tests whether this machine can create directory links (used by
+// doctor): it creates a temporary directory and link under baseDir, and
+// cleans them up immediately on success. Support is verified by actually
+// creating a link rather than assuming platform behavior.
 func Probe(baseDir string) error {
 	tmp, err := os.MkdirTemp(baseDir, ".agsy-probe-")
 	if err != nil {

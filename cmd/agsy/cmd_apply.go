@@ -13,7 +13,7 @@ import (
 
 // cmdApply is the commit flow (§12):
 // pre-checks → confirm local changes (status detection logic) → clear artifacts (shares deletion logic with clean) → build → mount
-// The order must not be reversed: clearing before checking would turn the check into decoration.
+// The order is fixed: clearing before checking would make the check meaningless.
 func cmdApply() int {
 	cfg, err := loadConfig()
 	if err != nil {
@@ -40,10 +40,9 @@ func cmdApply() int {
 	}
 
 	// Pre-check: mount targets occupied by real files (§12-10).
-	// This error is detectable before build — reporting it only at the mount
-	// stage, after the wipe and rebuild, means the user has already agreed to
-	// discard local changes and waited for the build, only to find the run was
-	// doomed from the start.
+	// Detectable before build; surfacing it only at the mount stage would
+	// discard local changes and spend a full rebuild on a run that cannot
+	// complete.
 	preLinks, err := mount.Inspect(cfg)
 	if err != nil {
 		return errExit(err)
@@ -62,9 +61,9 @@ func cmdApply() int {
 		return 1
 	}
 
-	// Compute runs before the confirmation (read-only): problems that doom
-	// the run — routing errors, name conflicts — must surface before the
-	// user agrees to discard local changes.
+	// Compute runs before the confirmation (read-only): fatal problems
+	// (routing errors, name conflicts) must surface before the discard
+	// confirmation.
 	p, err := build.Compute(cfg, sources)
 	if err != nil {
 		return errExit(err)

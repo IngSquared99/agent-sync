@@ -185,7 +185,7 @@ func TestStatusPromoteCycle(t *testing.T) {
 		t.Error("the change was not written back to the source")
 	}
 	// After write-back it must not be reported as a local change again
-	// (only a "lag" remains, reminding you to apply).
+	// (only a "lag" remains until the next apply).
 	report := captureLocals(t)
 	if report != 0 {
 		t.Errorf("still %d local changes after promote", report)

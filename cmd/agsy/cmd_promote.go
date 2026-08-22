@@ -92,10 +92,9 @@ func cmdPromote(args []string) int {
 	default: // interactive
 		code = promoteInteractive(cfg, out, m, rep.Locals)
 	}
-	// For items written back successfully, the current output content is now
-	// accepted as "no change worth keeping"; update the output hashes in the
-	// manifest so status stops nagging about the same thing.
-	// (Source hashes stay untouched → "behind" still shows, reminding you to apply next.)
+	// For successfully written-back items the output content is the new
+	// accepted baseline; persisting the refreshed hashes keeps status from
+	// re-reporting the promoted change.
 	if err := build.WriteManifest(out, m); err != nil {
 		fmt.Println(i18n.T("⚠ manifest update failed; status may still show local changes:"), err)
 	}
@@ -344,11 +343,10 @@ func promoteOne(cfg *config.Config, out string, m *build.Manifest, lc state.Loca
 }
 
 // markPromoted syncs the written-back copy to the item's other bucket copies,
-// then updates the output hash. Updating only OutPaths[0] is not enough: when a
-// workflow fans out to multiple buckets, the modified copy may be the second one;
-// status would then keep reporting the same local change forever, and next round
-// it escalates to "the source has changed too", which makes promote refuse
-// outright — the user would be stuck there.
+// then updates the hash baselines. Every OutPaths entry must be covered: a
+// workflow fanned out to multiple buckets may have been modified in a later
+// copy, and a stale baseline keeps the item listed as a local change and
+// eventually escalates it to "source changed too", which blocks promote.
 func markPromoted(out string, m *build.Manifest, it build.ManifestItem, changedRel, srcPath string) {
 	for i := range m.Items {
 		if m.Items[i].Category != it.Category || m.Items[i].Name != it.Name {
@@ -373,12 +371,11 @@ func markPromoted(out string, m *build.Manifest, it build.ManifestItem, changedR
 		if h, files, err := build.HashPath(p); err == nil {
 			m.Items[i].Hash, m.Items[i].Files = h, files
 		}
-		// The write-back just made the source identical to the accepted
-		// content, so refresh the source baseline as well. Leaving the old
-		// SrcHash would misflag the very next edit of this item as "the
-		// source changed too" — a promote-refusing deadlock caused by
-		// promote's own write. (srcPath is empty for --to redirects: the
-		// original source was not touched there.)
+		// The write-back made the source identical to the accepted content,
+		// so refresh the source baseline as well; a stale SrcHash would
+		// misflag the next edit of this item as "source changed too".
+		// (srcPath is empty for --to redirects: the original source is not
+		// touched there.)
 		if srcPath != "" {
 			if sh, sfiles, err := build.HashPath(srcPath); err == nil {
 				m.Items[i].SrcHash, m.Items[i].SrcFiles = sh, sfiles
@@ -388,7 +385,12 @@ func markPromoted(out string, m *build.Manifest, it build.ManifestItem, changedR
 	}
 }
 
-// writeBack: file → overwrite; directory → replace wholesale (the output copy is the desired state)
+// writeBack: file → overwrite; directory → replace wholesale (the output copy is the desired state).
+// Directories are copied into a hidden temp sibling first and swapped in only
+// when complete: a failure mid-copy must not leave the destination
+// half-written. The dot prefix keeps a crash leftover invisible to
+// source scanning (Accepts skips dot entries), and the next write-back of the
+// same item removes it.
 func writeBack(src, dest string) error {
 	st, err := os.Stat(src)
 	if err != nil {
@@ -400,15 +402,28 @@ func writeBack(src, dest string) error {
 	if !st.IsDir() {
 		return copyFile2(src, dest)
 	}
-	if err := os.RemoveAll(dest); err != nil {
+	tmp := filepath.Join(filepath.Dir(dest), "."+filepath.Base(dest)+".agsy-tmp")
+	if err := os.RemoveAll(tmp); err != nil {
 		return err
 	}
+	if err := copyTree(src, tmp); err != nil {
+		_ = os.RemoveAll(tmp)
+		return err
+	}
+	if err := os.RemoveAll(dest); err != nil {
+		_ = os.RemoveAll(tmp)
+		return err
+	}
+	return os.Rename(tmp, dest)
+}
+
+func copyTree(src, dst string) error {
 	return filepath.WalkDir(src, func(p string, d os.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
 		rel, _ := filepath.Rel(src, p)
-		t := filepath.Join(dest, rel)
+		t := filepath.Join(dst, rel)
 		if d.IsDir() {
 			return os.MkdirAll(t, 0o755)
 		}

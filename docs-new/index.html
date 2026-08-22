@@ -99,6 +99,7 @@
   <a class="small" href="#cmd-promote">promote</a>
   <a class="small" href="#cmd-clean">clean</a>
   <a href="#adapters">C-3. 適配器</a>
+  <a href="#scenarios">C-4. 情境全覽</a>
   <p class="g">疑難排解</p>
   <a href="#faq">D. Q&amp;A 常見問題</a>
   <a class="small" href="#faq-daily">D-1 觀念與日常使用</a>
@@ -130,10 +131,11 @@
 <tr><td>source tag（來源標籤）</td><td>同名檔案改名保留時附加的來源識別，如 <code>-fromlib-all-ai-lib</code></td></tr>
 <tr><td>adapter（適配器）</td><td>內建的「各家工具掛載範本」，<code>init</code> 時用來產生掛載設定</td></tr>
 <tr><td>behind</td><td>來源已更新、產物還沒重建 → 該跑 <code>apply</code></td></tr>
-<tr><td>local changes（本機改動）</td><td>掛載側被改了、還沒寫回來源 → 該跑 <code>promote</code></td></tr>
-<tr><td>untracked</td><td>掛載側新增、manifest 不認識的檔案（<code>apply</code> 會刪；要保留請搬回來源）</td></tr>
+<tr><td>local changes（本機改動）</td><td>產物端被改了、還沒寫回來源 → 該跑 <code>promote</code></td></tr>
+<tr><td>untracked</td><td>產物端新增、manifest 不認識的檔案（<code>apply</code> 會刪；要保留請搬回來源）</td></tr>
 <tr><td>orphan（孤兒連結）</td><td>之前的 <code>apply</code> 建立、但現在設定已不再引用的連結</td></tr>
 </table>
+<blockquote><p><strong>兩端與通道</strong>：檔案內容只存在於兩端——「<strong>來源端</strong>」＝ sources 裡的原始檔、「<strong>產物端</strong>」＝ <code>.agsy/</code> 裡的複本。掛載是連結，工具目錄（<code>.claude/</code> 等）裡開啟的檔案即為產物端。連結本身稱「<strong>掛載連結</strong>」，只是通道、不儲存內容；通道的各種狀況見<a href="#scenarios">情境全覽 C-4-5</a>。</p></blockquote>
 
 <h2>三層架構</h2>
 <p>agsy 的世界只有三層、兩個動作。先看最簡化的版本：</p>
@@ -255,14 +257,14 @@ Release 流程說明…</code></pre>
     │  agsy apply（重新建置＋掛載）
     ▼
  .agsy/ ──連結──▶  所有工具立刻讀到新內容</code></pre>
-<p><strong>promote（反向）：產物 → 來源。</strong>當你（或 AI 工具）直接改了掛載側的檔案——因為掛載是連結，實際被改到的是 <code>.agsy/</code> 裡的複本——就用 promote 把改動收回來源：</p>
+<p><strong>promote（反向）：產物 → 來源。</strong>當你（或 AI 工具）直接改了產物端的檔案——因為掛載是連結，實際被改到的是 <code>.agsy/</code> 裡的複本——就用 promote 把改動收回來源：</p>
 <pre><code> .claude/skills/…（AI 工具直接改了這裡的檔案）
-    ‖  掛載是連結，所以實際改到的是 .agsy/ 裡的複本
+    ‖  掛載是連結，所以實際改到的是產物端（.agsy/ 裡的複本）
     │
     │  agsy promote（把改動寫回）
     ▼
  sources（改動被保存——下次 apply 重建時才不會被蓋掉）</code></pre>
-<p>agsy 用 <code>.agsy/.agsy-manifest.json</code> 記錄建置當下來源與產物的雜湊值，<code>status</code> 因此能精準區分「來源更新了還沒重建」（behind）、「掛載側被改了還沒寫回」（local changes）、以及兩邊同時被改（需人工合併）。</p>
+<p>agsy 用 <code>.agsy/.agsy-manifest.json</code> 記錄建置當下來源與產物的雜湊值，<code>status</code> 因此能精準區分「來源更新了還沒重建」（behind）、「產物端被改了還沒寫回」（local changes）、以及兩邊同時被改（需人工合併）。</p>
 
 <h2>設計上的安全底線</h2>
 <ol>
@@ -388,7 +390,7 @@ agsy v1.2.3
 <tr><td><code>agsy plan</code></td><td>完整預覽 build + mount 的結果</td><td>唯讀</td></tr>
 <tr><td><code>agsy apply</code></td><td>前置檢查 → 確認 → 清空重建產物 → 掛載</td><td>寫 <code>.agsy/</code> 與連結</td></tr>
 <tr><td><code>agsy status</code></td><td>比對來源／產物／掛載三方，報告落差</td><td>唯讀（結尾有行動選單）</td></tr>
-<tr><td><code>agsy promote</code></td><td>把掛載側的改動寫回來源</td><td>寫來源</td></tr>
+<tr><td><code>agsy promote</code></td><td>把產物端的改動寫回來源</td><td>寫來源</td></tr>
 <tr><td><code>agsy clean</code></td><td>移除連結與 <code>.agsy/</code>（反安裝，保留 <code>agsy.yaml</code>）</td><td>刪除產物</td></tr>
 <tr><td><code>agsy version</code> / <code>help</code></td><td>版本 / 說明</td><td>唯讀</td></tr>
 </table>
@@ -514,9 +516,9 @@ workflows → .agsy/workflows/（策略: rename）
 
 <h2>B-7. 日常循環：三句話</h2>
 <pre><code> 平常改動：  改來源檔  ──▶  agsy apply                    （工具全部同步）
- 掛載側被改： agsy promote（寫回來源）──▶  agsy apply      （兩邊重新一致）
+ 產物端被改： agsy promote（寫回來源）──▶  agsy apply      （兩邊重新一致）
  不確定時：  agsy status                                  （它會告訴你該跑哪個）</code></pre>
-<blockquote><p><strong>心智模型只有一條</strong>：來源是唯一的真相來源（source of truth）。正常改動改來源＋<code>apply</code>；不小心（或刻意讓 AI）改到掛載側，就用 <code>promote</code> 收回來。</p></blockquote>
+<blockquote><p><strong>心智模型只有一條</strong>：來源是唯一的真相來源（source of truth）。正常改動改來源＋<code>apply</code>；不小心（或刻意讓 AI）改到產物端，就用 <code>promote</code> 收回來。</p></blockquote>
 
 <h2>B-8. 在 CI / git hook 裡使用</h2>
 <p><code>status</code> 的離開碼設計給自動化用：<code>0</code>＝完全同步、<code>1</code>＝有落差。</p>
@@ -587,6 +589,7 @@ mount:
 
 <h2><code>build.out</code>（產物目錄）</h2>
 <p>預設 <code>.agsy</code>。<strong>apply 會整個清空、clean 會整個刪除</strong>，所以有嚴格防呆——指向專案根／上層、專案外、家目錄、與來源互相包含的設定都會直接被擋。一句話：<strong>只能是專案內的專用子目錄</strong>。</p>
+<p><strong>要改 <code>out</code> 的話，順序很重要</strong>：先在<strong>舊設定</strong>下跑 <code>agsy clean</code>（把舊連結和舊產物清乾淨），再改 <code>agsy.yaml</code>、跑 <code>agsy apply</code>。順序反過來的話，舊產物目錄會殘留在磁碟上沒人清（agsy 只認得目前設定的 out）。改完也記得更新 <code>.gitignore</code>。</p>
 
 <h2><code>build.categories</code></h2>
 <p><code>from</code>＝來源掃描子目錄、<code>to</code>＝產物輸出子目錄；只寫一半另一半補預設；<strong>三個 <code>to</code> 必須互不相同</strong>。預設 <code>from</code> 和 <code>to</code> 同名，<strong>什麼時候會改 <code>from</code></strong>：你的既有庫子目錄不叫標準名稱時（例如一直都叫 <code>prompts/</code>），改 <code>from: prompts</code> 就能不搬家直接接上——這是<a href="#overview">來源命名規範</a>的逃生口。<code>to</code> 則幾乎不需要動。</p>
@@ -653,7 +656,7 @@ agsy promote [item] [--to &lt;source&gt;] [--all]   寫回改動
 agsy clean                  移除連結與產物（反安裝）
 agsy version / help         版本 / 說明</code></pre>
 <p><strong>通用行為</strong>：除 <code>init</code> 外都會往上層尋找 <code>agsy.yaml</code>；語言依 <code>AGSY_LANG</code>/<code>LC_ALL</code>/<code>LANG</code> 切換；Windows 雙擊執行時結束前會暫停。全域旗標 <code>--yes</code>/<code>-y</code>＝所有確認視為「是」。</p>
-<div class="card"><p><strong>建議節奏</strong>：第一次 <code>init → doctor → plan → apply</code>；改了來源 <code>apply</code>；改了掛載側 <code>status → promote → apply</code>；不確定 <code>status</code>；移除 <code>clean</code>。</p></div>
+<div class="card"><p><strong>建議節奏</strong>：第一次 <code>init → doctor → plan → apply</code>；改了來源 <code>apply</code>；改了產物端 <code>status → promote → apply</code>；不確定 <code>status</code>；移除 <code>clean</code>。</p></div>
 
 <h2 id="cmd-menu"><span class="tag">互動</span><code>agsy</code>（互動選單）</h2>
 <p>找不到設定檔時直接引導進 init。有設定檔時，頂部顯示一行狀態摘要（behind / new / local changes / untracked / missing outputs / mount issues 數量），再列出所有功能選項；偵測到本機改動時 apply 選項旁會標註「需要先確認」。</p>
@@ -711,6 +714,7 @@ agsy version / help         版本 / 說明</code></pre>
 <p>清空產物 → 複製（改名的 skill 同步改寫 SKILL.md 的 name）→ 確保所有連結目標目錄存在（沒 workflow 也會建立空的 <code>workflows/&lt;bucket&gt;/</code>，連結才不會斷）→ 寫 manifest → 建連結。<strong>掛載失敗時建置成果完好</strong>，修好問題重跑 apply 即可。</p>
 <h3>4. 孤兒連結回報</h3>
 <p>之前 apply 建過、現在設定不再引用的連結會列出提醒——<strong>只回報不刪除</strong>；手動刪或 <code>agsy clean</code>。</p>
+<blockquote><p>兩端各種變動組合（誰改了、誰刪了、誰新增）下 apply 的行為，完整對照表見 <a href="#scenarios">C-4 情境全覽</a>。</p></blockquote>
 
 <h2 id="cmd-status"><span class="tag">唯讀</span><code>agsy status</code></h2>
 <p>三方比對（來源 ↔ manifest ↔ 產物/掛載），報告結構：</p>
@@ -718,12 +722,12 @@ agsy version / help         版本 / 說明</code></pre>
 <ul>
 <li><code>behind</code>：來源更新了還沒重建。特別標註「來源檔已刪除 ⚠（apply 後項目消失）」與「來源路徑整個不見 ⚠（先修路徑，別急著 apply）」。</li>
 <li><code>new</code>：來源有新檔案還沒進產物。</li>
-<li><code>missing artifacts</code>：產物複本被刪（掛載側讀不到；apply 可重建）。</li>
+<li><code>missing artifacts</code>：產物複本被刪（工具透過連結讀不到；apply 可重建）。</li>
 </ul>
 <h3>② 產物 → sources（promote 的方向）</h3>
 <ul>
 <li><code>local changes</code>：產物被改、可寫回。可能附加：⚠ 來源也改了（需人工比對）／⚠ 多 bucket 複本改成不同內容／⚠ 來源檔已刪（promote 會重建）／⚠ 來源根目錄不見（promote 拒絕）。</li>
-<li><code>untracked</code>：掛載側新增、manifest 不認識——promote 寫不回、apply 會刪；要保留請搬進來源再 apply。</li>
+<li><code>untracked</code>：產物端新增、manifest 不認識——promote 寫不回、apply 會刪；要保留請搬進來源再 apply。</li>
 </ul>
 <h3>③ mounts ＋ ④ 摘要</h3>
 <p>各連結狀態（正常／不見／指錯斷掉／被佔用／孤兒），最後一行統計＋下一步建議（如「先 promote 保住改動，再 apply」）。</p>
@@ -749,9 +753,10 @@ agsy promote --all                    # 全部寫回原始來源（先列清單�
 <ul>
 <li>改名過的 skill：自動把 <code>SKILL.md</code> 的 name <strong>還原成原始名稱</strong>（<code>-fromlib-…</code> 只屬於產物，不能洩漏回來源）。</li>
 <li>多 bucket 複本同步為相同內容。</li>
-<li>更新 manifest 基準：status 不再對同一改動嘮叨，但會開始顯示 behind，提醒接著 <code>apply</code>。</li>
+<li>更新 manifest 基準：這筆改動回到無落差，status 不再列出；下一步執行 <code>apply</code> 完成重建。</li>
 <li><code>--to</code> 改道會提醒：<strong>舊來源的檔案還在</strong>，下次建置會收到新舊兩份同名——確認後手動刪舊的。</li>
 </ul>
+<blockquote><p>兩端各種變動組合下 promote 何時寫回、何時拒絕，完整對照表見 <a href="#scenarios">C-4 情境全覽</a>。</p></blockquote>
 
 <h2 id="cmd-clean"><code>agsy clean</code></h2>
 <p>反安裝：確認後移除掛載連結與整個產物目錄，<strong><code>agsy.yaml</code> 保留</strong>。只刪 agsy 建立的東西——真實目錄／檔案一律跳過並回報；manifest 記錄的孤兒連結會一併清（每條先驗證「確實是指向產物的連結」才動手）；連結刪除後變空的掛載目錄也一併移除。之後 <code>agsy apply</code> 可全部重建。</p>
@@ -819,6 +824,121 @@ mount:
     prompts: workflows/mytool</code></pre>
 <p>重新編譯後，init 的工具多選清單就會出現它。</p>
 
+<!-- ============ C-4 情境全覽 ============ -->
+<h1 id="scenarios">C-4. 情境全覽：apply 與 promote 的每一種狀況</h1>
+<p>apply 和 promote 遇到「兩端不一致」時到底會做什麼、什麼時候會被防呆擋下——這一章把<strong>所有情境</strong>列成對照表。遇到不確定的狀況，先跑 <code>agsy status</code>（唯讀），再拿它的輸出對照本章。</p>
+
+<h2 id="sc-basis">C-4-1. 判斷的基準：manifest 怎麼知道「誰改了」</h2>
+<p>每次 <code>apply</code> 建置時，manifest（<code>.agsy/.agsy-manifest.json</code>）會為每個項目記下<strong>兩個指紋</strong>：</p>
+<pre><code>                    ┌── SrcHash：建置當下「來源檔」的內容指紋
+ 建置當下拍快照 ──────┤
+                    └── Hash   ：建置當下「產物複本」的內容指紋
+
+ 之後任何時刻：
+   現在的來源檔  vs  SrcHash   不同 → 來源端改了（behind，該 apply）
+   現在的產物檔  vs  Hash      不同 → 產物端改了（local changes，該 promote）
+   兩個都不同              → 兩端都改了（要人工處理）</code></pre>
+<p>因為有「建置當下」這個第三方基準，agsy 能分辨「誰改的」，而不是只看到「兩邊不一樣」。</p>
+
+<h2 id="sc-matrix">C-4-2. 主對照表：來源端 × 產物端</h2>
+<p>「產物端」＝ <code>.agsy/</code> 裡的複本；你或 AI 工具透過 <code>.claude/</code> 等<strong>掛載連結</strong>碰到的就是這一份檔案（名詞定義見<a href="#overview">核心概念</a>）。</p>
+<table>
+<tr><th>#</th><th>來源端</th><th>產物端</th><th>status 顯示</th><th>apply 的行為</th><th>promote 的行為</th></tr>
+<tr><td>1</td><td>沒變</td><td>沒變</td><td>（無落差）</td><td>重建，內容不變</td><td>無事可做</td></tr>
+<tr><td>2</td><td><strong>內容改了</strong></td><td>沒變</td><td><code>behind</code></td><td>✅ 重建，同步新內容</td><td>沒有改動可寫回</td></tr>
+<tr><td>3</td><td>沒變</td><td><strong>內容改了</strong></td><td><code>local changes</code></td><td>⚠ 先列清單，問「捨棄並重建？」</td><td>✅ 寫回來源</td></tr>
+<tr><td>4</td><td><strong>內容改了</strong></td><td><strong>內容改了</strong></td><td><code>local changes</code>＋⚠ 來源也改了</td><td>⚠ 問「捨棄並重建？」（產物端改動會消失）</td><td>✘ <strong>拒絕</strong>——直接覆蓋會清掉來源的新內容，請人工合併（見 C-4-3）</td></tr>
+<tr><td>5</td><td><strong>新增檔案</strong></td><td>—</td><td><code>new</code></td><td>✅ 收進產物</td><td>與它無關</td></tr>
+<tr><td>6</td><td>—</td><td><strong>新增檔案</strong></td><td><code>untracked</code></td><td>⚠ 列出並確認後<strong>刪除</strong>（重建=以來源為準）</td><td>✘ 寫不回——它沒有對應的來源位置（見 C-4-4）</td></tr>
+<tr><td>7</td><td><strong>檔案被刪</strong></td><td>沒變</td><td><code>behind</code>＋⚠ 來源已刪</td><td>項目從產物<strong>消失</strong>（status 事先就警告過）</td><td>沒有改動可寫回</td></tr>
+<tr><td>8</td><td><strong>檔案被刪</strong></td><td><strong>內容改了</strong></td><td><code>local changes</code>＋⚠ 來源檔已刪</td><td>⚠ 問「捨棄？」，同意後項目消失</td><td>⚠ 明確問「<strong>要重建來源檔嗎？</strong>」，答應才寫</td></tr>
+<tr><td>9</td><td><strong>整個來源路徑不見</strong>（沒 clone／碟未掛載／打錯字）</td><td>任何狀態</td><td>⚠ 來源路徑不見（與「檔案被刪」明確區分）</td><td>✘ <strong>整個拒絕執行</strong>——不從殘缺的來源清單重建，否則缺席來源的項目會被清光</td><td>✘ 拒絕該來源的項目——先修好路徑</td></tr>
+<tr><td>10</td><td>沒變</td><td><strong>產物複本被刪</strong></td><td><code>missing artifacts</code></td><td>✅ 重建補回</td><td>沒有內容可寫回（不算 local change）</td></tr>
+<tr><td>11</td><td>—</td><td><strong>多個 bucket 複本，改成「不同」內容</strong></td><td><code>local changes</code>＋⚠ 多複本分歧</td><td>⚠ 問「捨棄？」</td><td>✘ 拒絕——哪份是對的要由人決定</td></tr>
+<tr><td>12</td><td>—</td><td><strong>多個 bucket 複本，改成「相同」內容</strong></td><td><code>local changes</code>（算一項）</td><td>⚠ 問「捨棄？」</td><td>✅ 寫回，並把所有複本同步成一致</td></tr>
+</table>
+<p>三條通用規律，記住就不用背表：</p>
+<ol>
+<li><strong>apply 永遠以來源為準</strong>——重建就是「把產物變成來源現在的樣子」，所以產物端任何未寫回的東西都會被蓋掉／刪掉，但一定<strong>先列清單問你</strong>（第 3、4、6、8、11、12 列）。</li>
+<li><strong>promote 只在「能安全寫回」時動手</strong>——凡是會蓋掉來源新內容（4）、無處可寫（6、10）、或需要人做選擇（11）的情境，一律拒絕或改問你。</li>
+<li><strong>「路徑不見」和「檔案被刪」是兩回事</strong>（9 vs 7）——前者多半是環境問題（repo 沒 clone、外接碟沒掛），agsy 直接停下要你先修，絕不會當成「你刪了檔案」處理。</li>
+</ol>
+
+<h2>C-4-3. 情境 4 手把手：兩端都改了怎麼辦</h2>
+<ol>
+<li><code>agsy status</code> 找到那個項目，記下它的原始來源路徑（報告裡有印）。</li>
+<li>手動比對兩份：<strong>來源檔</strong>（如 <code>~/all-ai-lib/rules/x.md</code>）vs <strong>產物檔</strong>（如 <code>.agsy/rules/x.md</code>，從 <code>.claude/rules/x.md</code> 點進去的也是同一份）。</li>
+<li>把要保留的內容合併進<strong>來源檔</strong>（記住：來源是唯一真相）。</li>
+<li><code>agsy apply</code> 重建——基準重設，回到情境 1。</li>
+</ol>
+
+<h2>C-4-4. 情境 6 手把手：想保留 untracked 檔案</h2>
+<p>untracked 通常是 AI 工具透過工具目錄在產物端直接<strong>新建</strong>的檔案（例如它幫你寫了一個新 rule）。想留下來：</p>
+<pre><code># 把檔案從產物搬進某個來源的對應子目錄
+mv .agsy/rules/new-rule.md ~/all-ai-lib/rules/
+agsy apply     # 之後它就是正式項目，開始被追蹤</code></pre>
+<p>不搬就 apply 的話，會在確認清單裡看到它，同意後被刪除。</p>
+
+<h2>C-4-5. 掛載連結的情境</h2>
+<p>掛載連結本身也可能出狀況——這不屬於兩端的內容差異，是「通道」本身的問題：</p>
+<table>
+<tr><th>情境</th><th>status 顯示</th><th>怎麼發生</th><th>處理</th></tr>
+<tr><td>連結不存在</td><td>✘ 連結不見</td><td>手動刪了、或還沒 apply 過</td><td><code>agsy apply</code> 重建</td></tr>
+<tr><td>連結指錯地方</td><td>✘ 指向…非目前設定的目標</td><td>改過 <code>build.out</code>、或連結被動過</td><td><code>agsy apply</code> 重建</td></tr>
+<tr><td>連結斷掉（目標不存在）</td><td>✘ 目標不存在</td><td><code>.agsy/</code> 被刪、專案被搬移（Windows junction 存絕對路徑）</td><td><code>agsy apply</code> 重建</td></tr>
+<tr><td>掛載點被<strong>真實</strong>目錄／檔案佔用</td><td>✘ 被真實目錄佔用</td><td>該工具目錄本來就有同名資料夾</td><td>✘ apply <strong>拒絕</strong>且<strong>絕不代刪</strong>——把內容搬進來源（通常正是你要的）或自行備份後刪除，再 apply</td></tr>
+<tr><td>孤兒連結（orphan）</td><td>⚠ 不再被設定引用</td><td>之前 apply 建過，後來你把該工具從 mount 拿掉</td><td>apply 只回報不刪；手動刪或 <code>agsy clean</code> 一併清</td></tr>
+</table>
+
+<h2>C-4-6. 建置開始前就會擋下 apply 的狀況</h2>
+<p>這些檢查刻意排在「確認捨棄改動」<strong>之前</strong>——不能讓你先同意丟掉改動、等建置跑完才發現這輪注定失敗：</p>
+<table>
+<tr><th>狀況</th><th>訊息重點</th><th>處理</th></tr>
+<tr><td>任一來源路徑不存在</td><td>拒絕從殘缺清單重建</td><td>修好路徑（clone／掛載／改錯字）</td></tr>
+<tr><td>掛載點被真實目錄佔用</td><td>拒絕並列出，絕不代刪</td><td>手動搬走或刪除</td></tr>
+<tr><td>workflow 路由錯誤（target 指到不存在的 bucket）</td><td>列出待修檔案</td><td>修 front-matter 或補 <code>route.buckets</code></td></tr>
+<tr><td>同名衝突（<code>on_conflict: error</code>）</td><td>列出衝突組</td><td>改名或刪除其中一份</td></tr>
+<tr><td>最終輸出名撞名（collision）</td><td>列出撞名組</td><td>改名（rename 後仍可能巧合撞名，一律擋下不互蓋）</td></tr>
+<tr><td>manifest 壞掉但 <code>.agsy/</code> 還在</td><td>無從得知裡面有沒有你的改動</td><td>⚠ 多問一次確認才重建</td></tr>
+<tr><td>manifest 版本比 agsy 新</td><td>用舊規則解讀新格式太危險</td><td>升級 agsy（或刪掉 <code>.agsy/</code> 重建）</td></tr>
+</table>
+
+<h2>C-4-7. promote 的完整防呆清單</h2>
+<p>除了主表的內容判斷，promote 對「寫到哪裡」還有一整組安全檢查：</p>
+<table>
+<tr><th>防呆</th><th>規則</th></tr>
+<tr><td>寫回位置鎖定</td><td>只能寫進該項目<strong>自己的格子</strong>：<code>&lt;設定的來源&gt;/&lt;類別子目錄&gt;/&lt;原始名稱&gt;</code>——manifest 被竄改也無法把寫入導去別處</td></tr>
+<tr><td><code>--to</code> 白名單</td><td>只能指向 <code>agsy.yaml</code> 裡<strong>已設定</strong>的來源；寫到別處＝脫離管理，直接拒絕</td></tr>
+<tr><td>拒寫符號連結</td><td>寫回目標若是 symlink，拒絕（不穿透連結寫檔）</td></tr>
+<tr><td>專案外要多確認</td><td>目標在專案外（共用庫）時多問一次——會影響所有用到該庫的專案</td></tr>
+<tr><td><code>--all --to</code> 不支援</td><td>整批改道會讓來源與 manifest 脫鉤</td></tr>
+<tr><td>改名 skill 還原名稱</td><td>寫回時自動把 <code>SKILL.md</code> 的 <code>name</code> 還原成原始名稱（<code>-fromlib-…</code> 只屬於產物）</td></tr>
+<tr><td><code>--to</code> 改道提醒</td><td>舊來源那份還在，下次建置會出現新舊兩份同名——確認後手動刪舊的</td></tr>
+<tr><td>寫回後更新基準</td><td>產物指紋與來源指紋同步刷新：這筆改動回到無落差，也不會誤判「來源也改了」；下一步執行 apply 完成重建</td></tr>
+</table>
+
+<h2>C-4-8. 快速決策圖</h2>
+<pre><code> 遇到狀況先跑 agsy status，然後：
+
+ 有 local changes？
+   ├─ 想保留 ──▶ agsy promote ──▶ agsy apply
+   ├─ 不想保留 ─▶ agsy apply（確認捨棄）
+   └─ 顯示「來源也改了」──▶ 人工合併進來源（C-4-3）──▶ agsy apply
+
+ 有 untracked？
+   ├─ 想保留 ──▶ 搬進來源子目錄（C-4-4）──▶ agsy apply
+   └─ 不想保留 ─▶ agsy apply（確認刪除）
+
+ 只有 behind / new / missing artifacts？ ──▶ agsy apply
+
+ 掛載異常？
+   ├─ 被真實目錄佔用 ──▶ 手動搬走 ──▶ agsy apply
+   ├─ 孤兒連結 ──▶ 手動刪或 agsy clean
+   └─ 其他（不見／指錯／斷掉）──▶ agsy apply
+
+ 來源路徑不見？ ──▶ 先修路徑（clone／掛載硬碟／改錯字），別急著跑任何指令</code></pre>
+
+
 <!-- ============ D. FAQ ============ -->
 <h1 id="faq">D. Q&amp;A 常見問題</h1>
 <p>以使用者角度整理，分四個小章節，照你遇到的狀況直接跳：</p>
@@ -850,7 +970,7 @@ mount:
 <h3>Q8：rules 目錄裡某檔案沒被收？</h3>
 <p>rules / workflows 只收單一 <code>.md</code>：目錄、非 .md、<code>.</code> 開頭、符號連結都不收；原因列在 plan 的排除清單。</p>
 <h3>Q9：status 說有 untracked，apply 還會刪掉它？</h3>
-<p>untracked＝掛載側新增、manifest 不認識的檔案，沒有來源位置所以 promote 寫不回、apply 會刪。<strong>要保留：搬進某個來源的對應子目錄，再 apply。</strong></p>
+<p>untracked＝產物端新增、manifest 不認識的檔案，沒有來源位置所以 promote 寫不回、apply 會刪。<strong>要保留：搬進某個來源的對應子目錄，再 apply。</strong></p>
 <h3>Q10：檔名多了 <code>-fromlib-xxx</code>？</h3>
 <p>同名衝突 rename 策略附加的<strong>來源標籤</strong>：兩份都保留、看檔名知道來自哪個來源。skill 改名時 front-matter 的 name 也同步改寫（promote 時自動還原）。</p>
 <h3>Q11：workflow 沒出現在任何工具裡？</h3>

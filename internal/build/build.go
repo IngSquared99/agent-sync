@@ -138,9 +138,9 @@ func Accepts(cat, path string, isDir bool) (bool, string) {
 		if !isDir {
 			return false, i18n.T("skills are directories; a single file is not accepted")
 		}
-		// A directory without SKILL.md is not a skill (it may be assets, scratch or
-		// a half-finished draft). Accepting it would only produce an empty shell on
-		// the mount side — no description, never triggered.
+		// A directory without SKILL.md is not a skill (assets, scratch, drafts).
+		// Accepting it would mount a skill with no description that can never
+		// trigger.
 		if st, err := os.Stat(filepath.Join(path, "SKILL.md")); err != nil || st.IsDir() {
 			return false, i18n.T("skill directory has no SKILL.md")
 		}
@@ -210,14 +210,22 @@ func AssignTags(sources []SourceState) {
 		}
 	}
 	// Still duplicated (e.g. two source paths differ only further up) → append a
-	// number as the last resort
-	seen := map[string]int{}
+	// number as the last resort. Each candidate is checked against every tag
+	// finalized so far: blindly appending could itself collide with another
+	// source's original tag (x, x, x2 → the second x must not become x2).
+	seen := map[string]bool{}
 	for i, t := range tags {
-		if n, ok := seen[t]; ok {
-			seen[t] = n + 1
-			tags[i] = t + strconv.Itoa(n+1)
-		} else {
-			seen[t] = 1
+		if !seen[t] {
+			seen[t] = true
+			continue
+		}
+		for n := 2; ; n++ {
+			cand := t + strconv.Itoa(n)
+			if !seen[cand] {
+				tags[i] = cand
+				seen[cand] = true
+				break
+			}
 		}
 	}
 	for i := range sources {
@@ -262,7 +270,7 @@ func Compute(cfg *config.Config, sources []SourceState) (*Plan, error) {
 				isDir := e.IsDir()
 				ok, reason := Accepts(cat, filepath.Join(dir, name), isDir)
 				if !ok {
-					if !strings.HasPrefix(name, ".") { // hidden files aren't worth the noise
+					if !strings.HasPrefix(name, ".") { // hidden files are not reported
 						p.Ignored = append(p.Ignored, Ignored{
 							Category: cat, Name: name,
 							From: filepath.Join(dir, name), Reason: reason,
@@ -692,11 +700,25 @@ func LoadManifest(out string) (*Manifest, error) {
 	if err := json.Unmarshal(raw, m); err != nil {
 		return nil, fmt.Errorf(i18n.T("manifest is corrupted: %w"), err)
 	}
-	// A manifest written by a newer agsy may have fields this version doesn't know;
-	// force-parsing would interpret new data with old rules, which is far more
-	// dangerous than simply saying "please upgrade".
+	// A manifest written by a newer agsy may have fields this version doesn't
+	// know; force-parsing would interpret new data with old rules, so refuse
+	// and require an upgrade.
 	if m.Version > ManifestVersion {
 		return nil, fmt.Errorf(i18n.T("manifest version %d exceeds the maximum %d supported by this agsy, please upgrade agsy (or remove the output directory and apply again)"), m.Version, ManifestVersion)
+	}
+	// The manifest lives in the build output — the one layer mounted AI tools
+	// can write to — so it is untrusted (same threat model as promote's
+	// destination check). Every consumer joins OutPaths onto the out directory
+	// (status hashing, promote's copy source, cross-bucket sync); an entry like
+	// "../../x" would escape the output and turn those into arbitrary reads or
+	// writes. Reject the whole manifest rather than skipping entries: a
+	// tampered record must not be half-trusted.
+	for _, it := range m.Items {
+		for _, rel := range it.OutPaths {
+			if !filepath.IsLocal(filepath.FromSlash(rel)) {
+				return nil, fmt.Errorf(i18n.T("manifest contains an invalid output path %q; it may be tampered with — remove the output directory and run agsy apply to rebuild"), rel)
+			}
+		}
 	}
 	return m, nil
 }

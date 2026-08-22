@@ -70,10 +70,8 @@ func Find(dir string) (string, bool) {
 }
 
 // FindUp walks up from dir looking for agsy.yaml (same convention as git).
-// §4 guarantees relative paths are resolved against the config file's directory,
-// not the user's current directory — for that guarantee to mean anything, the
-// config must also be findable when running from a project subdirectory,
-// otherwise the user just gets a cold "not found".
+// §4 resolves relative paths against the config file's directory, so the
+// config must also be findable from project subdirectories.
 func FindUp(dir string) (string, bool) {
 	for {
 		if p, ok := Find(dir); ok {
@@ -219,8 +217,8 @@ func (c *Config) validateOut() []string {
 		errs = append(errs, fmt.Sprintf(i18n.T("build.out (%s) is an ancestor of the project root, apply would wipe the project along with it"), out))
 	case !IsAncestor(c.BaseDir, out):
 		// The output directory must be a descendant of the project. apply empties
-		// it entirely and clean removes it entirely; pointing it outside the project
-		// (e.g. ~/Documents) treats the user's folder as disposable output.
+		// it entirely and clean removes it entirely; a location outside the
+		// project would treat an unrelated directory as disposable output.
 		errs = append(errs, fmt.Sprintf(i18n.T("build.out (%s) is not inside the project directory (%s). apply wipes it entirely, so only a dedicated directory inside the project is allowed"), out, c.BaseDir))
 	}
 	if home, err := os.UserHomeDir(); err == nil {
@@ -362,9 +360,9 @@ func (c *Config) SourceRoots() []string {
 	return out
 }
 
-// SourceRootOf finds which source root a path belongs to by longest-prefix match.
-// It replaces the "two levels up" guess: if categories.from is a nested path,
-// that guess goes wrong (§12-4).
+// SourceRootOf finds which source root a path belongs to by longest-prefix
+// match; prefix matching stays correct when categories.from is a nested
+// path (§12-4).
 func (c *Config) SourceRootOf(path string) (string, bool) {
 	best, ok := "", false
 	for _, root := range c.SourceRoots() {

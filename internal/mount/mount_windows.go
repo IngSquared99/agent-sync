@@ -35,10 +35,9 @@ func linkDir(absTarget, linkPath string) error {
 	// A junction is built by "create the directory first, then set the reparse
 	// point". If the second step fails (e.g. non-NTFS), the just-created empty
 	// directory must be removed: a leftover real directory would be classified
-	// on the next apply as "not created by this tool, refusing to delete" — a
-	// misleading message that leaves the user stuck.
-	// os.Remove does nothing to a non-empty directory, so it cannot wipe out
-	// the user's data by mistake.
+	// on the next apply as "not created by this tool, refusing to delete".
+	// os.Remove does nothing to a non-empty directory, so it cannot remove
+	// existing data by mistake.
 	cleanup := func(e error) error {
 		_ = os.Remove(linkPath)
 		return e

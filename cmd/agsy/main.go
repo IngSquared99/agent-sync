@@ -26,9 +26,9 @@ var (
 )
 
 // resolveVersion returns version/commit/date, falling back to the module's
-// build info when the ldflags injection didn't run — `go install …@vX.Y.Z`
-// carries the module version, a plain `go build` in a checkout carries the
-// vcs revision. Without this, every non-release build reports only "dev".
+// build info when the ldflags injection did not run: `go install …@vX.Y.Z`
+// carries the module version, a `go build` in a checkout carries the vcs
+// revision.
 func resolveVersion() (v, c, d string) {
 	v, c, d = version, commit, date
 	if v != "dev" {

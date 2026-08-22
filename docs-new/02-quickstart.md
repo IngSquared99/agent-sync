@@ -42,7 +42,7 @@ agsy v1.2.3
 | `agsy plan` | 完整預覽 build + mount 的結果 | 唯讀 |
 | `agsy apply` | 前置檢查 → 確認 → 清空重建產物 → 掛載 | 寫 `.agsy/` 與連結 |
 | `agsy status` | 比對來源／產物／掛載三方，報告落差 | 唯讀（結尾有行動選單） |
-| `agsy promote` | 把掛載側的改動寫回來源 | 寫來源 |
+| `agsy promote` | 把產物端的改動寫回來源 | 寫來源 |
 | `agsy clean` | 移除連結與 `.agsy/`（反安裝，保留 `agsy.yaml`） | 刪除產物 |
 | `agsy version` / `agsy help` | 版本 / 說明 | 唯讀 |
 
@@ -189,11 +189,11 @@ $ agsy apply
 
 ```
  平常改動：  改來源檔  ──▶  agsy apply                    （工具全部同步）
- 掛載側被改： agsy promote（寫回來源）──▶  agsy apply      （兩邊重新一致）
+ 產物端被改： agsy promote（寫回來源）──▶  agsy apply      （兩邊重新一致）
  不確定時：  agsy status                                  （它會告訴你該跑哪個）
 ```
 
-**心智模型只有一條**：來源是唯一的真相來源（source of truth）。正常改動改來源＋`apply`；不小心（或刻意讓 AI）改到掛載側，就用 `promote` 收回來。
+**心智模型只有一條**：來源是唯一的真相來源（source of truth）。正常改動改來源＋`apply`；不小心（或刻意讓 AI）改到產物端，就用 `promote` 收回來。
 
 ## B-8. 在 CI / git hook 裡使用
 
