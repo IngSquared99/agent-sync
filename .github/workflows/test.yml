@@ -1,0 +1,40 @@
+# Runs build and tests on every push to main and on every pull request, so a
+# PR page shows a pass/fail check before review. Documentation-only changes
+# (docs/ and markdown files, including the bot-regenerated READMEs) are
+# skipped — they cannot affect the Go code.
+name: test
+
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - "docs/**"
+      - "**.md"
+  pull_request:
+    branches: [main]
+    paths-ignore:
+      - "docs/**"
+      - "**.md"
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: stable
+          cache: false      # zero-dependency project: no go.sum, nothing to cache
+
+      - name: Build
+        run: go build ./...
+
+      - name: Vet
+        run: go vet ./...
+
+      - name: Test
+        run: go test ./...
