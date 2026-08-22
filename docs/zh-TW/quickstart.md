@@ -1,4 +1,4 @@
-# B. 快速上手：四步完成第一次同步
+# 快速上手：四步完成第一次同步
 
 整條路只有四步，走完一遍大約 10 分鐘：
 
@@ -10,7 +10,7 @@
 
 > 以下的終端機畫面都是**示意**（依實際版本可能略有差異），幫助你預期每一步會看到什麼。
 
-## B-1. 兩種操作方式
+## 兩種操作方式
 
 agsy 有雙入口：不帶參數是互動選單，帶參數直接執行。不想背指令，打 `agsy` 就對了：
 
@@ -33,7 +33,7 @@ agsy v1.2.3
 
 第一次在專案裡執行、還沒有設定檔時，選單會直接引導你進入 `init`。
 
-## B-2. 指令速查表
+## 指令速查表
 
 | 指令 | 做什麼 | 會不會寫入 |
 |------|--------|-----------|
@@ -48,9 +48,9 @@ agsy v1.2.3
 
 全域旗標：`--yes`（縮寫 `-y`）＝所有確認一律回答「是」，給 CI、腳本、git hook 等非互動環境用。**沒有 `--yes` 時，非互動環境遇到需要確認的動作會直接取消，絕不硬做。**
 
-## B-3. Step 0：準備來源目錄
+## Step 0：準備來源目錄
 
-準備至少一個來源，子目錄**必須**叫 `rules/`、`skills/`、`workflows/`（複數，[命名規範](00-overview.md#來源目錄必須照規範命名)）。常見組合是「個人共用庫＋專案內庫」：
+準備至少一個來源，子目錄**必須**叫 `rules/`、`skills/`、`workflows/`（複數，[命名規範](overview.md#來源目錄必須照規範命名)）。常見組合是「個人共用庫＋專案內庫」：
 
 ```sh
 mkdir -p ~/all-ai-lib/rules ~/all-ai-lib/skills ~/all-ai-lib/workflows
@@ -76,7 +76,7 @@ mkdir -p ./repo-ai-lib/rules ./repo-ai-lib/skills ./repo-ai-lib/workflows
 - `skills/` — **目錄**＋必備 `SKILL.md`（內部不可含符號連結）
 - `workflows/` — 單一 `.md` 檔，front-matter 可標 `target:` 分流
 
-## B-4. Step 1：`agsy init` — 回答五個問題
+## Step 1：`agsy init` — 回答五個問題
 
 在專案根目錄執行 `agsy init`，整個過程就是一次問答。畫面走起來像這樣：
 
@@ -130,7 +130,7 @@ workflow 沒標示 target 時放到哪?
 - `.gitignore` 那題答 **y**——產物不進版控；`agsy.yaml` 本身則**要**進版控。
 - 非互動環境（CI）用 `agsy init --yes ~/all-ai-lib ./repo-ai-lib`：來源用參數給，`--yes`＝接受建議預設策略。
 
-## B-5. Step 2：`agsy plan` — 唯讀預覽，看三個地方
+## Step 2：`agsy plan` — 唯讀預覽，看三個地方
 
 `plan` 把 apply 會做的每件事演練一遍，**保證不寫入任何檔案**：
 
@@ -173,7 +173,7 @@ workflows → .agsy/workflows/（策略: rename）
 2. **有沒有 `✘` 區塊**：同名衝突、撞名、路由錯誤——出現任何一種，apply 都會拒絕，先照清單修。
 3. **摘要那一行**：衝突／撞名／掛載異常都是 0，就可以放心進下一步。
 
-## B-6. Step 3：`agsy apply` — 正式建置與掛載
+## Step 3：`agsy apply` — 正式建置與掛載
 
 ```text
 $ agsy apply
@@ -183,9 +183,9 @@ $ agsy apply
 
 兩行綠色就是完成了。此時打開 `.claude/`，`rules`、`skills`、`commands` 都已是指向 `.agsy/` 的連結，工具直接讀得到。
 
-若中途停下，都是保護機制在動作：來源路徑缺失、掛載點被真實目錄佔用、或偵測到未寫回的本機改動（會列清單問你要不要捨棄）。照訊息處理完重跑即可，細節見[指令說明](04-commands.md#c-2-6-agsy-apply)。
+若中途停下，都是保護機制在動作：來源路徑缺失、掛載點被真實目錄佔用、或偵測到未寫回的本機改動（會列清單問你要不要捨棄）。照訊息處理完重跑即可，細節見[指令說明](commands.md#agsy-apply)。
 
-## B-7. 日常循環：三句話
+## 日常循環：三句話
 
 ```
  平常改動：  改來源檔  ──▶  agsy apply                    （工具全部同步）
@@ -195,7 +195,7 @@ $ agsy apply
 
 **心智模型只有一條**：來源是唯一的真相來源（source of truth）。正常改動改來源＋`apply`；不小心（或刻意讓 AI）改到產物端，就用 `promote` 收回來。
 
-## B-8. 在 CI / git hook 裡使用
+## 在 CI / git hook 裡使用
 
 `status` 的離開碼設計給自動化用：`0`＝完全同步、`1`＝有落差。
 
@@ -207,4 +207,4 @@ agsy status || { echo "agsy 不同步，請先執行 agsy apply"; exit 1; }
 agsy apply --yes
 ```
 
-→ 下一章：[個人設定檔 agsy.yaml](03-config.md)
+→ 下一章：[個人設定檔 agsy.yaml](config.md)

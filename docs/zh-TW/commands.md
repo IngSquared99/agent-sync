@@ -1,6 +1,6 @@
-# C-2. 指令說明
+# 指令說明
 
-## C-2-1. 總覽
+## 總覽
 
 ```
 agsy                        互動選單（含狀態摘要）
@@ -36,7 +36,7 @@ agsy help                   說明文字
 
 ---
 
-## C-2-2. `agsy`（互動選單）
+## `agsy`（互動選單）
 
 不帶參數執行進入選單。行為：
 
@@ -47,13 +47,13 @@ agsy help                   說明文字
 
 ---
 
-## C-2-3. `agsy init [sources...]`
+## `agsy init [sources...]`
 
 產生（或編輯）`agsy.yaml`。細節：
 
 ### 全新建立
 
-依序詢問：來源路徑（逐行輸入）→ 掛載哪些工具（多選，來自內建適配器）→ 三個類別的同名策略（必答；建議值 rules=rename、skills=error、workflows=rename）→ 產物目錄（預設 `.agsy`）→ 無 target 的 workflow 去向。（問答的完整畫面示意與每題答法，見[快速上手 B-4](02-quickstart.md#b-4-step-1agsy-init--回答五個問題)。）寫檔後：
+依序詢問：來源路徑（逐行輸入）→ 掛載哪些工具（多選，來自內建適配器）→ 三個類別的同名策略（必答；建議值 rules=rename、skills=error、workflows=rename）→ 產物目錄（預設 `.agsy`）→ 無 target 的 workflow 去向。（問答的完整畫面示意與每題答法，見[快速上手 Step 1](quickstart.md#step-1agsy-init--回答五個問題)。）寫檔後：
 
 - 若有類別「會建置但沒有任何工具掛載」（例如只勾 Codex，rules/skills 就沒人讀），會提出警告。
 - 詢問是否把產物目錄加進 `.gitignore`（已存在該條目就不會重複問）。
@@ -78,7 +78,7 @@ agsy init --yes ~/all-ai-lib ./repo-ai-lib
 
 ---
 
-## C-2-4. `agsy doctor`
+## `agsy doctor`
 
 唯讀環境健檢，**不做任何動作**。檢查項目：
 
@@ -94,7 +94,7 @@ agsy init --yes ~/all-ai-lib ./repo-ai-lib
 
 ---
 
-## C-2-5. `agsy plan`
+## `agsy plan`
 
 把 `apply` 會做的事完整演練一遍，**保證不寫入任何檔案**。輸出分三段：
 
@@ -119,7 +119,7 @@ exit code：有衝突／撞名／路由錯誤時為 1（可用於 CI 守門）�
 
 ---
 
-## C-2-6. `agsy apply`
+## `agsy apply`
 
 正式執行「清空重建＋掛載」。流程與所有中途停下的情況：
 
@@ -150,11 +150,11 @@ exit code：有衝突／撞名／路由錯誤時為 1（可用於 CI 守門）�
 
 `apply` 會記錄本次建立的連結。若之前的 apply 建過、但目前設定已不再引用的連結（例如你從 mount 拿掉了某個工具），會列出提醒——**apply 只回報不刪除**；要移除請手動刪或跑 `agsy clean`。
 
-> 兩端各種變動組合（誰改了、誰刪了、誰新增）下 apply 的行為，完整對照表見[情境全覽](07-scenarios.md)。
+> 兩端各種變動組合（誰改了、誰刪了、誰新增）下 apply 的行為，完整對照表見[情境全覽](scenarios.md)。
 
 ---
 
-## C-2-7. `agsy status`
+## `agsy status`
 
 三方比對（來源 ↔ manifest ↔ 產物/掛載），輸出完整報告。本體永遠唯讀。
 
@@ -192,7 +192,7 @@ exit code：有衝突／撞名／路由錯誤時為 1（可用於 CI 守門）�
 
 ---
 
-## C-2-8. `agsy promote`
+## `agsy promote`
 
 把產物端（工具透過掛載連結實際讀寫的檔案）的改動**寫回來源**。四種用法：
 
@@ -224,11 +224,11 @@ agsy promote --all                    # 全部寫回各自的原始來源（先�
 - 更新 manifest 的基準雜湊：這筆改動回到無落差，status 不再列出；下一步執行 `apply` 完成重建。
 - 用 `--to` 改道時會提醒：**舊來源的檔案還在**，下次建置會同時收到新舊兩份同名項目——確認新位置沒問題後請手動刪掉舊的。
 
-> 兩端各種變動組合下 promote 何時寫回、何時拒絕，完整對照表見[情境全覽](07-scenarios.md)。
+> 兩端各種變動組合下 promote 何時寫回、何時拒絕，完整對照表見[情境全覽](scenarios.md)。
 
 ---
 
-## C-2-9. `agsy clean`
+## `agsy clean`
 
 反安裝：移除掛載連結與整個產物目錄，**`agsy.yaml` 保留**。行為：
 
@@ -242,11 +242,11 @@ agsy promote --all                    # 全部寫回各自的原始來源（先�
 
 ---
 
-## C-2-10. `agsy version` / `agsy help`
+## `agsy version` / `agsy help`
 
 ```sh
 agsy version    # agsy v1.2.3 (commit …, built …, go 版本, 平台/架構)
 agsy help       # 用法總覽（同 --help / -h）
 ```
 
-→ 下一章：[適配器說明](05-adapters.md)
+→ 下一章：[適配器說明](adapters.md)

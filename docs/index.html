@@ -2,10 +2,10 @@
 <html lang="zh-Hant">
 <head>
   <meta charset="UTF-8">
-  <title>agsy 說明文件</title>
+  <title>agsy 說明文件 | agsy Documentation</title>
   <meta http-equiv="X-UA-Compatible" content="IE=edge">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=1.0">
-  <meta name="description" content="agsy（agent-sync）— 多來源 AI 指令檔的合併與掛載工具">
+  <meta name="description" content="agsy（agent-sync）— 多來源 AI 指令檔的合併與掛載工具 | merge & mount tool for multi-source AI instruction files">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/docsify@4/lib/themes/vue.css">
   <style>
     :root { --theme-color: #2563eb; }
@@ -15,19 +15,25 @@
   </style>
 </head>
 <body>
-  <div id="app">載入中…</div>
+  <div id="app">載入中… / Loading…</div>
   <script>
     window.$docsify = {
       name: 'agsy',
       repo: 'IngSquared99/agent-sync',
       loadSidebar: true,
+      loadNavbar: true,
       subMaxLevel: 2,
       coverpage: true,
       auto2top: true,
+      alias: {
+        '/_sidebar.md': '/zh-TW/_sidebar.md'
+      },
+      fallbackLanguages: ['zh-TW', 'en'],
       search: {
-        placeholder: '搜尋文件…',
-        noData: '找不到結果',
-        depth: 3
+        placeholder: { '/en/': 'Search…', '/': '搜尋文件…' },
+        noData: { '/en/': 'No results', '/': '找不到結果' },
+        depth: 3,
+        pathNamespaces: ['/zh-TW', '/en']
       }
     }
   </script>

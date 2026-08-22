@@ -1,0 +1,40 @@
+# Regenerates README.md / README.zh-TW.md from the docs sources whenever the
+# docs (or the generator) change on main. The commit is made by the workflow
+# itself; pushes by GITHUB_TOKEN do not retrigger workflows, so no loop.
+name: sync-readme
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "docs/**"
+      - "scripts/genreadme/**"
+
+permissions:
+  contents: write
+
+jobs:
+  genreadme:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: stable
+          cache: false
+
+      - name: Regenerate READMEs
+        run: go run ./scripts/genreadme
+
+      - name: Commit when changed
+        run: |
+          if git diff --quiet README.md README.zh-TW.md; then
+            echo "READMEs already up to date"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add README.md README.zh-TW.md
+          git commit -m "docs: regenerate READMEs from docs"
+          git push
