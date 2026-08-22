@@ -101,6 +101,10 @@
   <a href="#adapters">C-3. 適配器</a>
   <p class="g">疑難排解</p>
   <a href="#faq">D. Q&amp;A 常見問題</a>
+  <a class="small" href="#faq-daily">D-1 觀念與日常使用</a>
+  <a class="small" href="#faq-files">D-2 我的檔案怎麼了</a>
+  <a class="small" href="#faq-writeback">D-3 衝突與寫回</a>
+  <a class="small" href="#faq-platform">D-4 平台與環境</a>
 </nav>
 <main>
 
@@ -585,7 +589,7 @@ mount:
 <p>預設 <code>.agsy</code>。<strong>apply 會整個清空、clean 會整個刪除</strong>，所以有嚴格防呆——指向專案根／上層、專案外、家目錄、與來源互相包含的設定都會直接被擋。一句話：<strong>只能是專案內的專用子目錄</strong>。</p>
 
 <h2><code>build.categories</code></h2>
-<p><code>from</code>＝來源掃描子目錄、<code>to</code>＝產物輸出子目錄；只寫一半另一半補預設；<strong>三個 <code>to</code> 必須互不相同</strong>。</p>
+<p><code>from</code>＝來源掃描子目錄、<code>to</code>＝產物輸出子目錄；只寫一半另一半補預設；<strong>三個 <code>to</code> 必須互不相同</strong>。預設 <code>from</code> 和 <code>to</code> 同名，<strong>什麼時候會改 <code>from</code></strong>：你的既有庫子目錄不叫標準名稱時（例如一直都叫 <code>prompts/</code>），改 <code>from: prompts</code> 就能不搬家直接接上——這是<a href="#overview">來源命名規範</a>的逃生口。<code>to</code> 則幾乎不需要動。</p>
 <h3>收錄規則（不合規會被略過並回報，不會默默消失）</h3>
 <table>
 <tr><th>規則</th><th>說明</th></tr>
@@ -622,16 +626,17 @@ mount:
 </ul>
 
 <h2>驗證錯誤速查</h2>
-<p>設定載入時所有問題一次列出。常見訊息（意譯）與處理：</p>
+<p>設定有問題時會以「設定檔驗證失敗」開頭、<strong>一次列出全部問題</strong>（不是修一條再冒一條）。常見訊息與處理（下表為中文介面的訊息；英文介面為對應英文）：</p>
 <table>
-<tr><th>錯誤</th><th>處理</th></tr>
-<tr><td>sources 未設定</td><td>至少填一個來源</td></tr>
-<tr><td>on_conflict.某類別 未設定</td><td>三類別都明確填 first / rename / error</td></tr>
-<tr><td>build.out 會清掉…（危險路徑）</td><td>改回專案內專用目錄（如 <code>.agsy</code>）</td></tr>
-<tr><td>兩個類別的 to 相同</td><td>改成不同子目錄</td></tr>
-<tr><td>links 指到不存在的頂層</td><td>目標第一層要是 rules/skills/workflows（依 to 設定）</td></tr>
-<tr><td>links 指到不在 buckets 的 bucket</td><td>把該 bucket 加進 <code>route.buckets</code> 或改目標</td></tr>
-<tr><td>version 超過支援上限</td><td>升級 agsy</td></tr>
+<tr><th>錯誤訊息</th><th>處理</th></tr>
+<tr><td><code>sources 未設定，至少需要一個來源路徑</code></td><td><code>sources</code> 至少填一個</td></tr>
+<tr><td><code>build.on_conflict.rules 未設定，請明確指定 first / rename / error</code></td><td>三個類別的策略都要明確填</td></tr>
+<tr><td><code>build.out(…)不在專案目錄(…)底下。apply 會整個清空它…</code></td><td>產物目錄指到危險位置，改回專案內專用目錄（如 <code>.agsy</code>）</td></tr>
+<tr><td><code>build.categories.x.to 與 y 同為 "…"，不同類別必須輸出到不同子目錄</code></td><td>把其中一個 <code>to</code> 改成不同值</td></tr>
+<tr><td><code>mount … 的 links.x 指向 "z"，但產物裡沒有這一層，合法值: […]</code></td><td>連結目標第一層要是某類別的 <code>to</code> 值（rules / skills / workflows）</td></tr>
+<tr><td><code>mount … 的 links.x 指向 bucket "b"，但它不在 build.route.buckets 裡</code></td><td>把該 bucket 加進 <code>route.buckets</code>，或改連結目標</td></tr>
+<tr><td><code>mount 未設定，至少需要一個掛載目標</code></td><td><code>mount</code> 至少要有一個工具</td></tr>
+<tr><td><code>version: N 高於本版 agsy 支援的上限…</code></td><td>設定檔來自較新的 agsy，請升級 agsy</td></tr>
 </table>
 
 <!-- ============ C-2 指令 ============ -->
@@ -655,7 +660,7 @@ agsy version / help         版本 / 說明</code></pre>
 
 <h2 id="cmd-init"><code>agsy init [sources...]</code></h2>
 <h3>全新建立</h3>
-<p>依序詢問：來源路徑 → 掛載哪些工具（多選，來自內建適配器）→ 三類別同名策略（必答）→ 產物目錄 → 無 target 的 workflow 去向。寫檔後：若有類別「會建置但沒工具掛載」會警告（例如只勾 Codex 時 rules/skills 沒人讀）；並詢問是否把產物目錄加進 <code>.gitignore</code>。</p>
+<p>依序詢問：來源路徑 → 掛載哪些工具（多選，來自內建適配器）→ 三類別同名策略（必答）→ 產物目錄 → 無 target 的 workflow 去向。（問答的完整畫面示意與每題答法，見<a href="#quickstart">快速上手 B-4</a>。）寫檔後：若有類別「會建置但沒工具掛載」會警告（例如只勾 Codex 時 rules/skills 沒人讀）；並詢問是否把產物目錄加進 <code>.gitignore</code>。</p>
 <h3>編輯模式（設定檔已存在）</h3>
 <ul>
 <li>每題預帶目前值，<strong>按 Enter 保留原值</strong>；已掛載的工具預先勾選。</li>
@@ -762,6 +767,7 @@ agsy help       # 用法總覽（同 --help / -h）</code></pre>
 <p>內建的「各家工具掛載範本」：記錄工具的設定目錄、rules / skills / workflows 該連到哪個名字、以及專屬 bucket。<strong>只在 <code>init</code> 時發揮作用</strong>——你勾選工具，init 就把對應 mount 段落與 bucket 寫進 <code>agsy.yaml</code>；執行期 plan / apply / status 只看 <code>agsy.yaml</code>，所以 init 之後可任意手改，不受範本限制。</p>
 
 <h2>內建適配器一覽</h2>
+<blockquote><p>只想快速查「哪個類別掛在哪個資料夾」，看<a href="#overview">核心概念的總表</a>一張就夠；下面是逐工具的細節。</p></blockquote>
 <h3>Claude Code（bucket: <code>claude</code>，目錄 <code>.claude/</code>）</h3>
 <table>
 <tr><th>連結</th><th>指向產物</th><th>用途</th></tr>
@@ -815,8 +821,16 @@ mount:
 
 <!-- ============ D. FAQ ============ -->
 <h1 id="faq">D. Q&amp;A 常見問題</h1>
+<p>以使用者角度整理，分四個小章節，照你遇到的狀況直接跳：</p>
+<table>
+<tr><th>章節</th><th>收錄問題</th><th>什麼時候看</th></tr>
+<tr><td><a href="#faq-daily">D-1. 觀念與日常使用</a></td><td>Q1–Q6</td><td>剛上手、對日常流程有疑問</td></tr>
+<tr><td><a href="#faq-files">D-2. 我的檔案怎麼了</a></td><td>Q7–Q12</td><td>檔案沒被收錄、被改名、或怕被刪</td></tr>
+<tr><td><a href="#faq-writeback">D-3. 衝突與寫回</a></td><td>Q13–Q17</td><td>同名衝突、promote 被拒絕</td></tr>
+<tr><td><a href="#faq-platform">D-4. 平台與環境</a></td><td>Q18–Q25</td><td>Windows 權限、CI、移除、安全性</td></tr>
+</table>
 
-<h2>觀念與日常使用</h2>
+<h2 id="faq-daily">D-1. 觀念與日常使用</h2>
 <h3>Q1：我直接改了 <code>.claude/rules/</code> 裡的檔案，下次 apply 會不會被蓋掉？</h3>
 <p><code>.claude/rules</code> 是指向 <code>.agsy/rules</code> 的連結，你改的是產物。apply 重建前會偵測到「本機改動」，<strong>先列清單問你要不要捨棄</strong>，不會不吭聲蓋掉。想保留：先 <code>agsy promote</code> 寫回來源，再 apply。</p>
 <h3>Q2：<code>.agsy/</code> 要不要進版控？<code>agsy.yaml</code> 呢？</h3>
@@ -830,7 +844,7 @@ mount:
 <h3>Q6：多個專案共用一個來源庫？</h3>
 <p>可以，正是設計初衷。各專案的 sources 指向同一個 <code>~/all-ai-lib</code> 即可。對共用庫 promote 寫回時會多一道確認（影響所有用到它的專案）。</p>
 
-<h2>「我的檔案怎麼了」</h2>
+<h2 id="faq-files">D-2. 我的檔案怎麼了</h2>
 <h3>Q7：為什麼我的 skill 沒被收進去？</h3>
 <p>skill 必須是<strong>目錄</strong>＋內含 <code>SKILL.md</code>；目錄內不能有符號連結；名稱不能 <code>.</code> 開頭。<code>doctor</code> / <code>plan</code> 會直接告訴你原因。</p>
 <h3>Q8：rules 目錄裡某檔案沒被收？</h3>
@@ -844,7 +858,7 @@ mount:
 <h3>Q12：不小心刪了 <code>.agsy/</code> 裡的東西？</h3>
 <p>沒事，產物本來就可重建：<code>agsy apply</code> 一次全部回來。manifest 壞掉時 apply 會多問一次確認再重建。</p>
 
-<h2>衝突與寫回</h2>
+<h2 id="faq-writeback">D-3. 衝突與寫回</h2>
 <h3>Q13：兩個來源同名檔案會怎樣？</h3>
 <p>由該類別 <code>on_conflict</code> 決定：<code>rename</code> 兩份都留（附標籤）；<code>error</code> 停下列清單；<code>first</code> 只留優先權高的。init 必答題，無隱含預設。</p>
 <h3>Q14：為什麼 skills 建議 error？</h3>
@@ -857,7 +871,7 @@ mount:
 <h3>Q17：<code>--all</code> 和逐一寫回的差別？</h3>
 <p><code>--all</code> 先按來源分組列出全部（寫到共用庫的特別標警告），確認一次後逐項寫回；單項失敗不中止整批，最後列失敗清單。<code>--all</code> 不能配 <code>--to</code>。</p>
 
-<h2>平台與環境</h2>
+<h2 id="faq-platform">D-4. 平台與環境</h2>
 <h3>Q18：Windows 需要管理員權限或開發人員模式嗎？</h3>
 <p>不需要。agsy 用 junction，一般帳號即可建立。唯一注意：junction 存絕對路徑，<strong>搬移專案後要重跑 <code>agsy apply</code></strong>（macOS / Linux 用相對 symlink，不受影響）。</p>
 <h3>Q19：換電腦／共用庫還沒 clone，status 一堆警告？</h3>

@@ -53,7 +53,7 @@ agsy help                   說明文字
 
 ### 全新建立
 
-依序詢問：來源路徑（逐行輸入）→ 掛載哪些工具（多選，來自內建適配器）→ 三個類別的同名策略（必答；建議值 rules=rename、skills=error、workflows=rename）→ 產物目錄（預設 `.agsy`）→ 無 target 的 workflow 去向。寫檔後：
+依序詢問：來源路徑（逐行輸入）→ 掛載哪些工具（多選，來自內建適配器）→ 三個類別的同名策略（必答；建議值 rules=rename、skills=error、workflows=rename）→ 產物目錄（預設 `.agsy`）→ 無 target 的 workflow 去向。（問答的完整畫面示意與每題答法，見[快速上手 B-4](02-quickstart.md#b-4-step-1agsy-init--回答五個問題)。）寫檔後：
 
 - 若有類別「會建置但沒有任何工具掛載」（例如只勾 Codex，rules/skills 就沒人讀），會提出警告。
 - 詢問是否把產物目錄加進 `.gitignore`（已存在該條目就不會重複問）。

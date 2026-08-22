@@ -92,6 +92,7 @@ categories:
 - `to`：產物目錄下的輸出子目錄名。
 - 只寫其中一半時，另一半補預設值。
 - **三個 `to` 必須互不相同**（否則 rules 的單檔和 skills 的目錄會混在同一層，同名互蓋卻檢查不到）。
+- 預設 `from` 和 `to` 同名，**什麼時候會改 `from`**：你的既有庫子目錄不叫標準名稱時（例如一直都叫 `prompts/`），改 `from: prompts` 就能不搬家直接接上——這是[來源命名規範](00-overview.md#來源目錄必須照規範命名)的逃生口。`to` 則幾乎不需要動。
 
 ### 各類別的收錄規則
 
@@ -156,16 +157,17 @@ mount:
 
 ## C-1-10. 驗證錯誤速查
 
-設定載入時所有問題會**一次列出**（不是逐條擋）。常見訊息與處理：
+設定有問題時會以「設定檔驗證失敗」開頭、**一次列出全部問題**（不是修一條再冒一條）。常見訊息與處理（下表為中文介面的訊息；英文介面為對應英文）：
 
-| 錯誤訊息（意譯） | 處理 |
-|------------------|------|
-| `sources is not set` | 至少填一個來源 |
-| `build.on_conflict.rules is not set …` | 三個類別的策略都要明確填 `first`/`rename`/`error` |
-| `build.out … apply would wipe …` | 產物目錄指到危險位置，改回專案內專用目錄（如 `.agsy`） |
-| `build.categories.x.to and y are both …` | 兩個類別輸出到同一子目錄，把 `to` 改成不同值 |
-| `mount … links.x points to "z", but the output has no such top level` | 連結目標第一層要是 rules/skills/workflows（依你的 `to` 設定） |
-| `mount … points to bucket "b", but it is not in build.route.buckets` | 把該 bucket 加進 `route.buckets`，或改連結目標 |
-| `version: N exceeds the maximum …` | 設定檔來自較新的 agsy，請升級 agsy |
+| 錯誤訊息 | 處理 |
+|----------|------|
+| `sources 未設定，至少需要一個來源路徑` | `sources` 至少填一個 |
+| `build.on_conflict.rules 未設定，請明確指定 first / rename / error` | 三個類別的策略都要明確填 |
+| `build.out(…)不在專案目錄(…)底下。apply 會整個清空它…` | 產物目錄指到危險位置，改回專案內專用目錄（如 `.agsy`） |
+| `build.categories.x.to 與 y 同為 "…"，不同類別必須輸出到不同子目錄` | 把其中一個 `to` 改成不同值 |
+| `mount … 的 links.x 指向 "z"，但產物裡沒有這一層，合法值: […]` | 連結目標第一層要是某類別的 `to` 值（rules / skills / workflows） |
+| `mount … 的 links.x 指向 bucket "b"，但它不在 build.route.buckets 裡` | 把該 bucket 加進 `route.buckets`，或改連結目標 |
+| `mount 未設定，至少需要一個掛載目標` | `mount` 至少要有一個工具 |
+| `version: N 高於本版 agsy 支援的上限…` | 設定檔來自較新的 agsy，請升級 agsy |
 
 → 下一章：[指令說明](04-commands.md)
