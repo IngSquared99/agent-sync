@@ -1,17 +1,37 @@
-# B. 快速上手：Command Line 指引
+# B. 快速上手：四步完成第一次同步
 
-這一章帶你在 5–10 分鐘內從零走完一輪：準備來源 → 初始化 → 預覽 → 建置掛載 → 日常同步。
+整條路只有四步，走完一遍大約 10 分鐘：
+
+```
+ Step 0        Step 1         Step 2         Step 3
+ 準備來源  ──▶  init 設定  ──▶  plan 預覽  ──▶  apply 建置＋掛載  ──▶ 🎉 所有工具同步完成
+ （擺檔案）     （問答一次）     （唯讀確認）     （正式執行）
+```
+
+> 以下的終端機畫面都是**示意**（依實際版本可能略有差異），幫助你預期每一步會看到什麼。
 
 ## B-1. 兩種操作方式
 
-agsy 有雙入口，兩種都可以用：
+agsy 有雙入口：不帶參數是互動選單，帶參數直接執行。不想背指令，打 `agsy` 就對了：
 
-```sh
-agsy            # 不帶參數：進入互動選單（會顯示目前同步狀態摘要）
-agsy <指令>      # 帶參數：直接執行該指令（適合熟手與腳本）
+```text
+$ agsy
+agsy v1.2.3
+
+  狀態：落後 0 │ 新增 2 │ 本地改動 1 │ 未追蹤 0 │ 產物缺失 0 │ 掛載異常 0
+
+要做什麼?
+  apply    重建產物並掛載      ⚠ 1 項本地改動，需先確認
+  plan     預覽變更，不寫入
+  promote  回寫本地改動（1 項）
+> status   檢視詳細狀態
+  doctor   環境健檢
+  init     設定（已有設定檔則進入編輯模式）
+  clean    移除產物與掛載
+  離開
 ```
 
-第一次在專案裡執行 `agsy` 而還沒有設定檔時，選單會直接引導你進入 `init`。
+第一次在專案裡執行、還沒有設定檔時，選單會直接引導你進入 `init`。
 
 ## B-2. 指令速查表
 
@@ -30,100 +50,147 @@ agsy <指令>      # 帶參數：直接執行該指令（適合熟手與腳本�
 
 ## B-3. Step 0：準備來源目錄
 
-先準備至少一個來源。常見的組合是「個人共用庫 + 專案內庫」：
+準備至少一個來源，子目錄**必須**叫 `rules/`、`skills/`、`workflows/`（複數，[命名規範](00-overview.md#來源目錄必須照規範命名)）。常見組合是「個人共用庫＋專案內庫」：
 
 ```sh
 mkdir -p ~/all-ai-lib/rules ~/all-ai-lib/skills ~/all-ai-lib/workflows
 mkdir -p ./repo-ai-lib/rules ./repo-ai-lib/skills ./repo-ai-lib/workflows
 ```
 
-放一點內容進去，例如：
-
-```sh
-cat > ~/all-ai-lib/rules/python-style.md <<'EOF'
-# Python 風格
-- 用 ruff 排版
-- 函式一律加 type hints
-EOF
-```
-
-三個子目錄的格式要求（不合規的檔案會被略過，`plan` / `doctor` 會列出原因）：
-
-- `rules/`：單一 `.md` 檔。
-- `skills/`：**目錄**，裡面必須有 `SKILL.md`；目錄內不能含符號連結。
-- `workflows/`：單一 `.md` 檔，front-matter 可標 `target:` 決定分流到哪些工具。
-
-## B-4. Step 1：初始化 `agsy init`
-
-在專案根目錄執行：
-
-```sh
-cd my-project
-agsy init
-```
-
-問答內容依序是：
-
-1. **來源路徑**（依優先權排序，一行一個；`~` 開頭＝共用庫、`./` 開頭＝專案內）。
-2. **要掛載哪些工具**（多選：Claude Code / OpenAI Codex / Antigravity…）。
-3. **三個類別的同名衝突策略**（rules / skills / workflows 各問一次，必答）：
-   - `rename`：兩份都留，檔名附上來源標籤（rules 建議值）。
-   - `error`：停下並列出衝突，由你手動處理（skills 建議值，最保守）。
-   - `first`：只留優先權較高來源的那份，其餘捨棄。
-4. **產物目錄**（預設 `.agsy`）。
-5. **沒有標 target 的 workflow 要去哪**（建議「所有 bucket」）。
-
-完成後會寫出 `agsy.yaml`，並詢問是否把產物目錄加入 `.gitignore`（建議加；`agsy.yaml` 本身則**應該**進版控）。
-
-> 非互動環境（CI）要用 `agsy init --yes ~/all-ai-lib ./repo-ai-lib` 的形式：來源用參數給，`--yes` 表示接受建議的預設策略。
-
-## B-5. Step 2：預覽 `agsy plan`
-
-```sh
-agsy plan
-```
-
-`plan` 把 `apply` 會做的每件事**演練一遍但完全不寫入**：
-
-- 每個來源的存在狀態與來源標籤；
-- 三個類別各會收進哪些項目、誰被改名、workflow 分流到哪些 bucket；
-- 被略過的檔案與原因、同名衝突、路徑異常；
-- 每個掛載連結會建立／重建／或被真實目錄擋住。
-
-看到結尾 `No files were written`（未寫入任何檔案）字樣，確認內容符合預期再進下一步。
-
-## B-6. Step 3：建置與掛載 `agsy apply`
-
-```sh
-agsy apply
-```
-
-流程：前置檢查（來源都在、掛載點沒被真實目錄佔用、沒有路由／衝突錯誤）→ 若偵測到未寫回的本機改動會**先列出並要求確認** → 清空 `.agsy/` → 重新建置 → 建立掛載連結。
-
-成功後：
+建好之後，把你的指令檔照類別放進去，長這樣就對了：
 
 ```
-✔ build done: 12 items → .agsy/
-✔ mount done: 5 links
+~/all-ai-lib/                     ./repo-ai-lib/
+├── rules/                        ├── rules/
+│   └── python-style.md           │   └── api-naming.md
+├── skills/                       ├── skills/
+│   └── code-review/              │   （還沒有也沒關係，留空即可）
+│       └── SKILL.md              └── workflows/
+└── workflows/                        └── deploy.md
+    └── release.md
 ```
 
-此時打開 `.claude/` 就能看到 `rules`、`skills`、`commands` 都是指向 `.agsy/` 的連結，工具可以直接讀取。
+三個子目錄的格式，一行記住一個：
 
-## B-7. 日常循環
+- `rules/` — 單一 `.md` 檔
+- `skills/` — **目錄**＋必備 `SKILL.md`（內部不可含符號連結）
+- `workflows/` — 單一 `.md` 檔，front-matter 可標 `target:` 分流
 
-```sh
-# 改了來源檔之後：
-agsy apply                 # 重建 + 掛載，所有工具同步更新
+## B-4. Step 1：`agsy init` — 回答五個問題
 
-# 不確定現在狀態：
-agsy status                # behind？local changes？掛載正常嗎？
+在專案根目錄執行 `agsy init`，整個過程就是一次問答。畫面走起來像這樣：
 
-# AI 工具（或你）直接改了掛載側的檔案：
-agsy promote               # 互動選擇要寫回來源的項目
-agsy apply                 # 寫回後再重建，兩邊一致
+```text
+$ agsy init
+開始設定 agsy（Enter 採用預設值）
 
-# 想暫時移除 agsy 的所有產出：
-agsy clean
+來源路徑，依優先級排序（~ 開頭=共用庫、./ 開頭=專案內）
+一行一個，直接按 Enter 結束輸入（例：~/all-ai-lib、./repo-ai-lib）
+  來源 1: ~/all-ai-lib
+  來源 2: ./repo-ai-lib
+  來源 3: ⏎
+
+要掛載哪些工具?
+  [x] Claude Code（.claude/）
+  [ ] OpenAI Codex（.codex/）
+  [x] Antigravity（.agents/）
+
+rules 同名時如何處理?（建議 rename：常有「全域基礎+專案補充」的並存需求）
+> rename   兩份都保留，檔名加來源標記
+  error    停止並列出衝突，由你手動處理（最保守）
+  first    只留優先來源的那份，其餘丟棄
+
+skills 同名時如何處理?（建議 error）…
+workflows 同名時如何處理?（建議 rename）…
+
+建置產物目錄 [.agsy] ⏎
+
+workflow 沒標示 target 時放到哪?
+> 全部 bucket（建議：檔案出現在所有地方，比神秘消失好理解）
+  不放，並在 plan / apply 時警告
+
+✔ 已寫入 agsy.yaml
+
+.agsy/ 是可重建的產物，要加進 .gitignore 嗎? y
+  下一步：agsy plan 預覽 → agsy apply 執行
+```
+
+五個問題的答法一張表看完：
+
+| # | 問題 | 建議答案 | 為什麼 |
+|---|------|----------|--------|
+| 1 | 來源路徑？ | 共用庫在前、專案庫在後 | 順序＝優先權，越前面越優先 |
+| 2 | 掛載哪些工具？ | 勾你實際在用的 | 之後隨時可重跑 init 增減 |
+| 3 | 同名衝突怎麼辦？（三類各問一次） | rules=`rename`、skills=`error`、workflows=`rename` | rename 兩份共存、error 最保守、first 只留優先那份 |
+| 4 | 產物目錄？ | 直接 Enter（`.agsy`） | 必須是專案內的專用目錄 |
+| 5 | 沒標 target 的 workflow 去哪？ | 全部 bucket | 「到處出現」比「神祕消失」好除錯 |
+
+收尾兩個小提醒：
+
+- `.gitignore` 那題答 **y**——產物不進版控；`agsy.yaml` 本身則**要**進版控。
+- 非互動環境（CI）用 `agsy init --yes ~/all-ai-lib ./repo-ai-lib`：來源用參數給，`--yes`＝接受建議預設策略。
+
+## B-5. Step 2：`agsy plan` — 唯讀預覽，看三個地方
+
+`plan` 把 apply 會做的每件事演練一遍，**保證不寫入任何檔案**：
+
+```text
+$ agsy plan
+讀取 agsy.yaml ✔
+來源（依優先級）:
+  [1] ~/all-ai-lib    ✔   標記: @all-ai-lib
+  [2] ./repo-ai-lib   ✔   標記: @repo-ai-lib
+
+═══ build 預覽 ═══
+
+rules → .agsy/rules/（策略: rename）
+  git-commit.md                        ← [1] all-ai-lib
+  python-style-fromlib-all-ai-lib.md   ← [1] all-ai-lib    ⚠ 同名，已加來源標記
+  python-style-fromlib-repo-ai-lib.md  ← [2] repo-ai-lib   ⚠ 同名，已加來源標記
+
+skills → .agsy/skills/（策略: error）
+  code-review                          ← [1] all-ai-lib
+
+workflows → .agsy/workflows/（策略: rename）
+  release.md                           ← [1] all-ai-lib   → claude
+
+═══ mount 預覽 ═══
+
+.claude/
+  commands   → workflows/claude   （不存在，將建立）
+  rules      → rules              （不存在，將建立）
+  skills     → skills             （不存在，將建立）
+
+═══ 摘要 ═══
+5 個項目 │ 2 個改名 │ 0 組衝突 │ 0 組撞名 │ 0 個丟棄(first)│ 0 個不收錄 │ 6 條連結 │ 0 個掛載異常 │ 0 個掛載衝突
+
+未寫入任何檔案。確認無誤後執行 agsy apply。
+```
+
+這張畫面只需要看三個地方：
+
+1. **每一行的 `← [n] 來源標記`**：確認每個檔案來自你預期的來源；`⚠` 表示同名被改名（兩份都在）。
+2. **有沒有 `✘` 區塊**：同名衝突、撞名、路由錯誤——出現任何一種，apply 都會拒絕，先照清單修。
+3. **摘要那一行**：衝突／撞名／掛載異常都是 0，就可以放心進下一步。
+
+## B-6. Step 3：`agsy apply` — 正式建置與掛載
+
+```text
+$ agsy apply
+✔ build 完成：5 個項目 → .agsy/
+✔ mount 完成：6 條連結
+```
+
+兩行綠色就是完成了。此時打開 `.claude/`，`rules`、`skills`、`commands` 都已是指向 `.agsy/` 的連結，工具直接讀得到。
+
+若中途停下，都是保護機制在動作：來源路徑缺失、掛載點被真實目錄佔用、或偵測到未寫回的本機改動（會列清單問你要不要捨棄）。照訊息處理完重跑即可，細節見[指令說明](04-commands.md#c-2-6-agsy-apply)。
+
+## B-7. 日常循環：三句話
+
+```
+ 平常改動：  改來源檔  ──▶  agsy apply                    （工具全部同步）
+ 掛載側被改： agsy promote（寫回來源）──▶  agsy apply      （兩邊重新一致）
+ 不確定時：  agsy status                                  （它會告訴你該跑哪個）
 ```
 
 **心智模型只有一條**：來源是唯一的真相來源（source of truth）。正常改動改來源＋`apply`；不小心（或刻意讓 AI）改到掛載側，就用 `promote` 收回來。

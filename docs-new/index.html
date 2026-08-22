@@ -47,6 +47,19 @@
   pre{background:var(--code-bg);border:1px solid var(--line);border-radius:8px;
     padding:14px 16px;overflow-x:auto;line-height:1.55}
   pre code{background:none;padding:0;font-size:.85rem}
+  .term{background:#161b22;border:1px solid #30363d;border-radius:10px;margin:1.1em 0;overflow:hidden}
+  .term-bar{display:flex;align-items:center;gap:6px;padding:9px 12px;background:#21262d;border-bottom:1px solid #30363d}
+  .term-bar i{width:11px;height:11px;border-radius:50%;display:block}
+  .term-bar i:nth-child(1){background:#ff5f57}
+  .term-bar i:nth-child(2){background:#febc2e}
+  .term-bar i:nth-child(3){background:#28c840}
+  .term-bar span{margin-left:8px;color:#8b949e;font-size:.75rem}
+  .term pre{background:none;border:none;border-radius:0;margin:0;color:#c9d1d9}
+  .term .p{color:#7ee787;font-weight:600}
+  .term .ok{color:#3fb950}
+  .term .warn{color:#d29922}
+  .term .dim{color:#8b949e}
+  .term .sel{color:#79c0ff}
   table{border-collapse:collapse;width:100%;margin:1em 0;font-size:.92rem;display:block;overflow-x:auto}
   th,td{border:1px solid var(--line);padding:7px 11px;text-align:left;vertical-align:top}
   th{background:var(--card)}
@@ -303,56 +316,176 @@ agsy doctor    # 唯讀環境健檢</code></pre>
 <p><strong>升級</strong>：重跑安裝指令（永遠抓最新 release，直接覆蓋）。<strong>移除</strong>：各專案先 <code>agsy clean</code>，再刪執行檔（macOS/Linux：<code>sudo rm /usr/local/bin/agsy</code>；Windows：刪 <code>%LOCALAPPDATA%\Programs\agsy</code> 並清 PATH）。</p>
 
 <!-- ============ B. 快速上手 ============ -->
-<h1 id="quickstart">B. 快速上手：Command Line 指引</h1>
+<h1 id="quickstart">B. 快速上手：四步完成第一次同步</h1>
+<p>整條路只有四步，走完一遍大約 10 分鐘：</p>
+<pre><code> Step 0        Step 1         Step 2         Step 3
+ 準備來源  ──▶  init 設定  ──▶  plan 預覽  ──▶  apply 建置＋掛載  ──▶ 🎉 所有工具同步完成
+ （擺檔案）     （問答一次）     （唯讀確認）     （正式執行）</code></pre>
+<blockquote><p>以下的終端機畫面都是<strong>示意</strong>（依實際版本可能略有差異），幫助你預期每一步會看到什麼。</p></blockquote>
 
 <h2>B-1. 兩種操作方式</h2>
-<pre><code>agsy            # 不帶參數：互動選單（顯示狀態摘要；適合新手）
-agsy &lt;指令&gt;      # 直接執行（適合熟手與腳本）</code></pre>
-<p>第一次執行且還沒有設定檔時，選單會直接引導你進 <code>init</code>。</p>
+<p>agsy 有雙入口：不帶參數是互動選單，帶參數直接執行。不想背指令，打 <code>agsy</code> 就對了：</p>
+<div class="term"><div class="term-bar"><i></i><i></i><i></i><span>agsy — 互動選單</span></div>
+<pre><code><span class="p">$ agsy</span>
+agsy v1.2.3
+
+<span class="dim">  狀態：落後 0 │ 新增 2 │ 本地改動 1 │ 未追蹤 0 │ 產物缺失 0 │ 掛載異常 0</span>
+
+要做什麼?
+  apply    重建產物並掛載      <span class="warn">⚠ 1 項本地改動，需先確認</span>
+  plan     預覽變更，不寫入
+  promote  回寫本地改動（1 項）
+<span class="sel">> status   檢視詳細狀態</span>
+  doctor   環境健檢
+  init     設定（已有設定檔則進入編輯模式）
+  clean    移除產物與掛載
+  離開</code></pre></div>
+<p>第一次在專案裡執行、還沒有設定檔時，選單會直接引導你進入 <code>init</code>。</p>
 
 <h2>B-2. 指令速查表</h2>
 <table>
-<tr><th>指令</th><th>做什麼</th><th>寫入？</th></tr>
-<tr><td><code>agsy init [sources...]</code></td><td>問答式產生 <code>agsy.yaml</code>（已存在則編輯模式）</td><td>寫 <code>agsy.yaml</code></td></tr>
-<tr><td><code>agsy doctor</code></td><td>環境健檢</td><td>唯讀</td></tr>
-<tr><td><code>agsy plan</code></td><td>完整預覽 build + mount</td><td>唯讀</td></tr>
-<tr><td><code>agsy apply</code></td><td>檢查 → 確認 → 清空重建 → 掛載</td><td>寫 <code>.agsy/</code> 與連結</td></tr>
-<tr><td><code>agsy status</code></td><td>三方比對報告落差</td><td>唯讀</td></tr>
-<tr><td><code>agsy promote</code></td><td>掛載側改動寫回來源</td><td>寫來源</td></tr>
-<tr><td><code>agsy clean</code></td><td>移除連結與產物（保留 <code>agsy.yaml</code>）</td><td>刪除產物</td></tr>
+<tr><th>指令</th><th>做什麼</th><th>會不會寫入</th></tr>
+<tr><td><code>agsy init [sources...]</code></td><td>問答式產生 <code>agsy.yaml</code>（已存在則進入編輯模式）</td><td>寫 <code>agsy.yaml</code></td></tr>
+<tr><td><code>agsy doctor</code></td><td>環境健檢：設定、來源、掛載點、連結能力</td><td>唯讀</td></tr>
+<tr><td><code>agsy plan</code></td><td>完整預覽 build + mount 的結果</td><td>唯讀</td></tr>
+<tr><td><code>agsy apply</code></td><td>前置檢查 → 確認 → 清空重建產物 → 掛載</td><td>寫 <code>.agsy/</code> 與連結</td></tr>
+<tr><td><code>agsy status</code></td><td>比對來源／產物／掛載三方，報告落差</td><td>唯讀（結尾有行動選單）</td></tr>
+<tr><td><code>agsy promote</code></td><td>把掛載側的改動寫回來源</td><td>寫來源</td></tr>
+<tr><td><code>agsy clean</code></td><td>移除連結與 <code>.agsy/</code>（反安裝，保留 <code>agsy.yaml</code>）</td><td>刪除產物</td></tr>
 <tr><td><code>agsy version</code> / <code>help</code></td><td>版本 / 說明</td><td>唯讀</td></tr>
 </table>
-<p>全域旗標 <code>--yes</code>（<code>-y</code>）：所有確認一律「是」，給 CI／腳本用。<strong>沒有它時，非互動環境需要確認的動作會直接取消，絕不硬做。</strong></p>
+<p>全域旗標：<code>--yes</code>（縮寫 <code>-y</code>）＝所有確認一律回答「是」，給 CI、腳本、git hook 等非互動環境用。<strong>沒有 <code>--yes</code> 時，非互動環境遇到需要確認的動作會直接取消，絕不硬做。</strong></p>
 
 <h2>B-3. Step 0：準備來源目錄</h2>
+<p>準備至少一個來源，子目錄<strong>必須</strong>叫 <code>rules/</code>、<code>skills/</code>、<code>workflows/</code>（複數，見<a href="#overview">命名規範</a>）。常見組合是「個人共用庫＋專案內庫」：</p>
 <pre><code>mkdir -p ~/all-ai-lib/rules ~/all-ai-lib/skills ~/all-ai-lib/workflows
-mkdir -p ./repo-ai-lib/rules ./repo-ai-lib/skills ./repo-ai-lib/workflow</code></pre>
-<p>格式要求（不合規的檔案會被略過並回報原因）：<code>rules/</code> 單一 <code>.md</code>；<code>skills/</code> 目錄＋<code>SKILL.md</code>、內部不可含符號連結；<code>workflows/</code> 單一 <code>.md</code>，front-matter 可標 <code>target:</code>。</p>
+mkdir -p ./repo-ai-lib/rules ./repo-ai-lib/skills ./repo-ai-lib/workflows</code></pre>
+<p>建好之後，把你的指令檔照類別放進去，長這樣就對了：</p>
+<pre><code>~/all-ai-lib/                     ./repo-ai-lib/
+├── rules/                        ├── rules/
+│   └── python-style.md           │   └── api-naming.md
+├── skills/                       ├── skills/
+│   └── code-review/              │   （還沒有也沒關係，留空即可）
+│       └── SKILL.md              └── workflows/
+└── workflows/                        └── deploy.md
+    └── release.md</code></pre>
+<p>三個子目錄的格式，一行記住一個：</p>
+<ul>
+<li><code>rules/</code> — 單一 <code>.md</code> 檔</li>
+<li><code>skills/</code> — <strong>目錄</strong>＋必備 <code>SKILL.md</code>（內部不可含符號連結）</li>
+<li><code>workflows/</code> — 單一 <code>.md</code> 檔，front-matter 可標 <code>target:</code> 分流</li>
+</ul>
 
-<h2>B-4. Step 1：<code>agsy init</code></h2>
-<p>在專案根目錄執行。問答依序：來源路徑（依優先權）→ 掛載哪些工具（多選）→ 三個類別的同名策略（必答；建議 rules=<code>rename</code>、skills=<code>error</code>、workflows=<code>rename</code>）→ 產物目錄（預設 <code>.agsy</code>）→ 無 target 的 workflow 去向。完成後詢問是否把產物目錄加入 <code>.gitignore</code>（建議加；<code>agsy.yaml</code> 則應進版控）。</p>
-<blockquote><p>非互動環境：<code>agsy init --yes ~/all-ai-lib ./repo-ai-lib</code>——來源用參數給，<code>--yes</code>＝同意建議預設策略。</p></blockquote>
+<h2>B-4. Step 1：<code>agsy init</code> — 回答五個問題</h2>
+<p>在專案根目錄執行 <code>agsy init</code>，整個過程就是一次問答。畫面走起來像這樣：</p>
+<div class="term"><div class="term-bar"><i></i><i></i><i></i><span>agsy init</span></div>
+<pre><code><span class="p">$ agsy init</span>
+開始設定 agsy（Enter 採用預設值）
 
-<h2>B-5. Step 2：<code>agsy plan</code>（預覽）</h2>
-<p>把 apply 會做的每件事演練一遍但完全不寫入：來源狀態與標籤、各類別收錄清單、改名與分流、被略過的檔案與原因、衝突、每個連結將採取的動作。看到「未寫入任何檔案」再進下一步。</p>
+來源路徑，依優先級排序（~ 開頭=共用庫、./ 開頭=專案內）
+<span class="dim">一行一個，直接按 Enter 結束輸入（例：~/all-ai-lib、./repo-ai-lib）</span>
+  來源 1: <span class="sel">~/all-ai-lib</span>
+  來源 2: <span class="sel">./repo-ai-lib</span>
+  來源 3: <span class="dim">⏎</span>
 
-<h2>B-6. Step 3：<code>agsy apply</code>（建置與掛載）</h2>
-<pre><code>agsy apply
-# ✔ build done: 12 items → .agsy/
-# ✔ mount done: 5 links</code></pre>
-<p>之後打開 <code>.claude/</code> 就能看到指向 <code>.agsy/</code> 的連結，工具可直接讀取。</p>
+要掛載哪些工具?
+  <span class="sel">[x] Claude Code（.claude/）</span>
+  [ ] OpenAI Codex（.codex/）
+  <span class="sel">[x] Antigravity（.agents/）</span>
 
-<h2>B-7. 日常循環</h2>
-<pre><code>改了來源檔       → agsy apply
-不確定狀態       → agsy status
-掛載側被改了     → agsy promote → agsy apply
-暫時移除全部產出  → agsy clean</code></pre>
-<blockquote><p><strong>心智模型只有一條</strong>：來源是唯一的真相來源。正常改動改來源＋apply；改到掛載側就用 promote 收回來。</p></blockquote>
+rules 同名時如何處理?<span class="dim">（建議 rename：常有「全域基礎+專案補充」的並存需求）</span>
+<span class="sel">> rename   兩份都保留，檔名加來源標記</span>
+  error    停止並列出衝突，由你手動處理（最保守）
+  first    只留優先來源的那份，其餘丟棄
 
-<h2>B-8. CI / git hook</h2>
-<pre><code># pre-commit：不同步就擋下
-agsy status || { echo "agsy 不同步，請先 agsy apply"; exit 1; }
-# CI 重建
+skills 同名時如何處理?<span class="dim">（建議 error）…</span>
+workflows 同名時如何處理?<span class="dim">（建議 rename）…</span>
+
+建置產物目錄 [.agsy] <span class="dim">⏎</span>
+
+workflow 沒標示 target 時放到哪?
+<span class="sel">> 全部 bucket（建議：檔案出現在所有地方，比神秘消失好理解）</span>
+  不放，並在 plan / apply 時警告
+
+<span class="ok">✔ 已寫入 agsy.yaml</span>
+
+.agsy/ 是可重建的產物，要加進 .gitignore 嗎? <span class="sel">y</span>
+<span class="dim">  下一步：agsy plan 預覽 → agsy apply 執行</span></code></pre></div>
+<p>五個問題的答法一張表看完：</p>
+<table>
+<tr><th>#</th><th>問題</th><th>建議答案</th><th>為什麼</th></tr>
+<tr><td>1</td><td>來源路徑？</td><td>共用庫在前、專案庫在後</td><td>順序＝優先權，越前面越優先</td></tr>
+<tr><td>2</td><td>掛載哪些工具？</td><td>勾你實際在用的</td><td>之後隨時可重跑 init 增減</td></tr>
+<tr><td>3</td><td>同名衝突怎麼辦？（三類各問一次）</td><td>rules=<code>rename</code>、skills=<code>error</code>、workflows=<code>rename</code></td><td>rename 兩份共存、error 最保守、first 只留優先那份</td></tr>
+<tr><td>4</td><td>產物目錄？</td><td>直接 Enter（<code>.agsy</code>）</td><td>必須是專案內的專用目錄</td></tr>
+<tr><td>5</td><td>沒標 target 的 workflow 去哪？</td><td>全部 bucket</td><td>「到處出現」比「神祕消失」好除錯</td></tr>
+</table>
+<p>收尾兩個小提醒：</p>
+<ul>
+<li><code>.gitignore</code> 那題答 <strong>y</strong>——產物不進版控；<code>agsy.yaml</code> 本身則<strong>要</strong>進版控。</li>
+<li>非互動環境（CI）用 <code>agsy init --yes ~/all-ai-lib ./repo-ai-lib</code>：來源用參數給，<code>--yes</code>＝接受建議預設策略。</li>
+</ul>
+
+<h2>B-5. Step 2：<code>agsy plan</code> — 唯讀預覽，看三個地方</h2>
+<p><code>plan</code> 把 apply 會做的每件事演練一遍，<strong>保證不寫入任何檔案</strong>：</p>
+<div class="term"><div class="term-bar"><i></i><i></i><i></i><span>agsy plan</span></div>
+<pre><code><span class="p">$ agsy plan</span>
+讀取 agsy.yaml <span class="ok">✔</span>
+來源（依優先級）:
+  [1] ~/all-ai-lib    <span class="ok">✔</span>   標記: @all-ai-lib
+  [2] ./repo-ai-lib   <span class="ok">✔</span>   標記: @repo-ai-lib
+
+═══ build 預覽 ═══
+
+rules → .agsy/rules/（策略: rename）
+  git-commit.md                        ← [1] all-ai-lib
+  python-style-fromlib-all-ai-lib.md   ← [1] all-ai-lib    <span class="warn">⚠ 同名，已加來源標記</span>
+  python-style-fromlib-repo-ai-lib.md  ← [2] repo-ai-lib   <span class="warn">⚠ 同名，已加來源標記</span>
+
+skills → .agsy/skills/（策略: error）
+  code-review                          ← [1] all-ai-lib
+
+workflows → .agsy/workflows/（策略: rename）
+  release.md                           ← [1] all-ai-lib   → claude
+
+═══ mount 預覽 ═══
+
+.claude/
+  commands   → workflows/claude   <span class="dim">（不存在，將建立）</span>
+  rules      → rules              <span class="dim">（不存在，將建立）</span>
+  skills     → skills             <span class="dim">（不存在，將建立）</span>
+
+═══ 摘要 ═══
+5 個項目 │ 2 個改名 │ 0 組衝突 │ 0 組撞名 │ 0 個丟棄(first)│ 0 個不收錄 │ 6 條連結 │ 0 個掛載異常 │ 0 個掛載衝突
+
+<span class="dim">未寫入任何檔案。確認無誤後執行 agsy apply。</span></code></pre></div>
+<p>這張畫面只需要看三個地方：</p>
+<ol>
+<li><strong>每一行的 <code>← [n] 來源標記</code></strong>：確認每個檔案來自你預期的來源；<code>⚠</code> 表示同名被改名（兩份都在）。</li>
+<li><strong>有沒有 <code>✘</code> 區塊</strong>：同名衝突、撞名、路由錯誤——出現任何一種，apply 都會拒絕，先照清單修。</li>
+<li><strong>摘要那一行</strong>：衝突／撞名／掛載異常都是 0，就可以放心進下一步。</li>
+</ol>
+
+<h2>B-6. Step 3：<code>agsy apply</code> — 正式建置與掛載</h2>
+<div class="term"><div class="term-bar"><i></i><i></i><i></i><span>agsy apply</span></div>
+<pre><code><span class="p">$ agsy apply</span>
+<span class="ok">✔ build 完成：5 個項目 → .agsy/</span>
+<span class="ok">✔ mount 完成：6 條連結</span></code></pre></div>
+<p>兩行綠色就是完成了。此時打開 <code>.claude/</code>，<code>rules</code>、<code>skills</code>、<code>commands</code> 都已是指向 <code>.agsy/</code> 的連結，工具直接讀得到。</p>
+<p>若中途停下，都是保護機制在動作：來源路徑缺失、掛載點被真實目錄佔用、或偵測到未寫回的本機改動（會列清單問你要不要捨棄）。照訊息處理完重跑即可，細節見 <a href="#cmd-apply">apply 指令說明</a>。</p>
+
+<h2>B-7. 日常循環：三句話</h2>
+<pre><code> 平常改動：  改來源檔  ──▶  agsy apply                    （工具全部同步）
+ 掛載側被改： agsy promote（寫回來源）──▶  agsy apply      （兩邊重新一致）
+ 不確定時：  agsy status                                  （它會告訴你該跑哪個）</code></pre>
+<blockquote><p><strong>心智模型只有一條</strong>：來源是唯一的真相來源（source of truth）。正常改動改來源＋<code>apply</code>；不小心（或刻意讓 AI）改到掛載側，就用 <code>promote</code> 收回來。</p></blockquote>
+
+<h2>B-8. 在 CI / git hook 裡使用</h2>
+<p><code>status</code> 的離開碼設計給自動化用：<code>0</code>＝完全同步、<code>1</code>＝有落差。</p>
+<pre><code># pre-commit hook 範例：來源改了卻忘記 apply 就擋下 commit
+agsy status || { echo "agsy 不同步，請先執行 agsy apply"; exit 1; }
+
+# CI 裡重建（非互動，接受所有確認）
 agsy apply --yes</code></pre>
 
 <!-- ============ C-1 設定檔 ============ -->
