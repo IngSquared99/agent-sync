@@ -12,7 +12,7 @@ import (
 	"github.com/IngSquared99/agent-sync/internal/prompt"
 )
 
-// cmdInit interactively generates agsy.yaml.
+// cmdInit interactively generates agsy.yaml.123
 // If it already exists, enter edit mode: load the existing config as
 // defaults so pressing Enter keeps current values, and show a diff for
 // confirmation before writing. yaml comments get replaced with template
