@@ -46,6 +46,11 @@ archives:
       - goos: windows
         formats: [zip]      # Windows users expect zip
 
+# Pre-release tags (v1.2.3-rc1, -beta…) are marked "Pre-release" on GitHub
+# automatically, so the "latest release" pointer never lands on a test build.
+release:
+  prerelease: auto
+
 checksum:
   name_template: "checksums.txt"
 
