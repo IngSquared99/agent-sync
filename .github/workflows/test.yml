@@ -1,0 +1,79 @@
+# Runs build and tests on every push to main and on every pull request, so a
+# PR page shows a pass/fail check before review. Documentation-only changes
+# (docs/ and markdown files, including the bot-regenerated READMEs) are
+# skipped — they cannot affect the Go code.
+#
+# Actions are pinned to full commit SHAs (the version tag stays as a comment):
+# a moving tag can be repointed at malicious code, and the release workflow
+# next door holds real credentials. Dependabot keeps the pins current.
+name: test
+
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - "docs/**"
+      - "**.md"
+  pull_request:
+    branches: [main]
+    paths-ignore:
+      - "docs/**"
+      - "**.md"
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
+        with:
+          go-version: stable
+          cache: false      # zero-dependency project: no go.sum, nothing to cache
+
+      - name: Build
+        run: go build ./...
+
+      - name: gofmt
+        # vendored go-yaml keeps its upstream formatting and is exempt
+        run: |
+          out=$(gofmt -l . | grep -v '^internal/yaml/' || true)
+          if [ -n "$out" ]; then
+            echo "gofmt needed on:"; echo "$out"; exit 1
+          fi
+
+      - name: Vet
+        run: go vet ./...
+
+      - name: Test
+        run: go test ./...
+
+  # `go build ./...` on Linux never even parses the files behind windows/
+  # darwin build tags (junctions, hard links, TTY handling), so a PR could
+  # break them and stay green until the release cross-compile blew up.
+  # Building and vetting those GOOS targets here closes that gap; running
+  # the tests on real Windows/macOS runners is a separate, heavier decision.
+  cross-compile:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
+        with:
+          go-version: stable
+          cache: false
+
+      - name: Build & vet windows
+        run: |
+          GOOS=windows GOARCH=amd64 go build ./...
+          GOOS=windows GOARCH=amd64 go vet ./...
+          GOOS=windows GOARCH=arm64 go build ./...
+
+      - name: Build & vet darwin
+        run: |
+          GOOS=darwin GOARCH=arm64 go build ./...
+          GOOS=darwin GOARCH=arm64 go vet ./...
+          GOOS=darwin GOARCH=amd64 go build ./...

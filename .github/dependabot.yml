@@ -1,0 +1,10 @@
+# Keeps the SHA-pinned GitHub Actions in .github/workflows/ up to date:
+# Dependabot understands the `@<sha> # vX.Y.Z` pin convention and opens PRs
+# that bump both the SHA and the version comment together.
+# (No gomod ecosystem entry: the project has zero module dependencies.)
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly

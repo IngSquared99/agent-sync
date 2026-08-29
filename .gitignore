@@ -1,0 +1,16 @@
+# goreleaser local snapshot output
+dist/
+
+# locally built binaries
+/agsy
+/agsy.exe
+
+# agsy's own build output, lock file and mount links (when trying the tool inside this repo)
+.agsy/
+.agsy.lock
+.claude/
+.agents/
+/AGENTS.md
+
+# macOS
+.DS_Store

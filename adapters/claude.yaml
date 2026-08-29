@@ -1,0 +1,10 @@
+# Claude Code mount preset
+# Claude reads rules from .claude/rules/ (it does not read AGENTS.md) and
+# skills — including workflows converted to skills — from .claude/skills/.
+name: claude
+display: Claude Code
+mount:
+  dir: .claude
+  links:
+    rules: rules
+    skills: skills

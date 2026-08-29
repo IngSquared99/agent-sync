@@ -1,0 +1,11 @@
+# OpenAI Codex mount preset
+# Codex reads project rules from the root AGENTS.md and skills (including
+# converted workflows) from .agents/skills/. It has no other project-level
+# locations.
+name: codex
+display: OpenAI Codex
+needs_agents_md: true
+mount:
+  dir: .agents
+  links:
+    skills: skills
