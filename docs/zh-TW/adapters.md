@@ -11,7 +11,7 @@ adapter 是單一 AI 工具的內建掛載預設：它讀哪個目錄、該看�
 | `antigravity`（Google Antigravity） | `.agents/skills → skills`、`.agents/workflows → workflows` | 根目錄 `AGENTS.md` | 不掛 `.agents/rules`——Antigravity 讀 `AGENTS.md`，再掛 rules 目錄會讓每條規則重複兩次。`/名稱` 執行轉接頭，由它載入 skill |
 | `cursor`（Cursor） | `.agents/skills → skills` | 根目錄 `AGENTS.md` | Cursor 原生讀 `.agents/skills/`，與其他工具共用 `.agents` 掛載 |
 
-勾選 `codex`、`antigravity`、`cursor` 任一個，init 就會加上根目錄掛載：
+勾選 `codex`、`antigravity`、`cursor` 任一個，init 就會加上根目錄掛載：123
 
 ```yaml
   - dir: .
