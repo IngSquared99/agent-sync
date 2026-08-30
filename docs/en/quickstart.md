@@ -48,7 +48,7 @@ Build output directory (default: .agsy): ⏎
 
 The following generated paths are rebuildable and usually belong in .gitignore:
 Add which entries to .gitignore? (a = all) a
-  ✔ Added 6 entries to .gitignore
+  ✔ Added 7 entries to .gitignore
   Next: agsy plan to preview → agsy apply to execute
 ```
 
@@ -69,7 +69,7 @@ The preview lists, per category, everything the build would collect: which rules
 ```
 $ agsy apply
 ✔ build done: 12 items → .agsy/
-✔ mount done: 6 links
+✔ mount done: 5 links
 ```
 
 Resulting project layout:

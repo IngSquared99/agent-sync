@@ -317,7 +317,7 @@ workflows 的同名衝突怎麼處理?                     ❯ rename
 
 以下由 agsy 產生的路徑皆可重建,通常應加入 .gitignore:
 要把哪些項目加進 .gitignore?（a = 全部）a
-  ✔ 已將 6 個項目加入 .gitignore
+  ✔ 已將 7 個項目加入 .gitignore
   下一步:agsy plan 預覽 → agsy apply 執行
 ```
 
@@ -342,7 +342,7 @@ $ agsy plan
 ```
 $ agsy apply
 ✔ build 完成:12 個項目 → .agsy/
-✔ mount 完成:6 條連結
+✔ mount 完成:5 條連結
 ```
 
 完成後的專案結構：

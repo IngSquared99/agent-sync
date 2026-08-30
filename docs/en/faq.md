@@ -17,7 +17,7 @@
 
 ### Q2: Should `.agsy/` be version-controlled? What about `agsy.yaml`?
 
-- `.agsy/`, the mount links, and the root `AGENTS.md` — **no**: all rebuildable artifacts; `init` offers to add them to `.gitignore` for you.
+- `.agsy/`, the lock file `.agsy.lock`, the mount links, and the root `AGENTS.md` — **no**: all generated (the lock guards a running command and is removed when it finishes; the rest are rebuildable artifacts); `init` offers to add them to `.gitignore` for you.
 - `agsy.yaml` — **yes**: it is the project's sync configuration.
 
 ### Q3: After editing a source, when do the tools see the new content?

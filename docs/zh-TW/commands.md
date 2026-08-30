@@ -21,6 +21,7 @@ agsy help                   使用說明
 - 除了 `init`（只看目前目錄），每個指令都會**向上**尋找 `agsy.yaml`（與 git 同慣例），從專案子目錄執行也可以。
 - 介面語言依 `AGSY_LANG` / `LC_ALL` / `LANG`（`zh*` → 繁體中文）。
 - Windows 上雙擊執行時，agsy 會在視窗關閉前暫停，讓輸出留得住。
+- `apply`、`clean`、`init` 以鎖定檔（`agsy.yaml` 旁的 `.agsy.lock`）防止同一專案並發執行，指令結束即自動移除。期間啟動的第二個執行會回報鎖定並結束；殘留超過 15 分鐘的鎖（例如程式當掉留下）會被自動接管。
 
 各情境的建議節奏：
 
@@ -52,7 +53,7 @@ AI 改了掛載中的檔案  status → 把值得留的搬進來源 → apply
 依序詢問：來源路徑（一行一個）→ 要服務的工具（多選：Claude Code、OpenAI Codex、Antigravity、Cursor）→ 逐類別的衝突策略（必答；建議 rules=rename、skills=error、workflows=rename）→ 產物目錄（預設 `.agsy`）。寫入後：
 
 - 若專案根已存在真實的 `AGENTS.md`，init 立即提醒：agsy 會在該位置掛載自己產生的 `AGENTS.md`，且絕不合併或覆蓋真實檔案——請把內容搬進某個來源的 `rules/`，或改名保存。
-- 提供一份可勾選的 `.gitignore` 建議清單（`.agsy/`、各掛載連結、根目錄 `AGENTS.md`）；想全選就全選——有些團隊刻意把連結進版控。
+- 提供一份可勾選的 `.gitignore` 建議清單（`.agsy/`、鎖定檔 `.agsy.lock`、各掛載連結、根目錄 `AGENTS.md`）；想全選就全選——有些團隊刻意把連結進版控。
 
 ### 編輯模式（agsy.yaml 已存在）
 

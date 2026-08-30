@@ -21,6 +21,7 @@ agsy help                   usage text
 - Except for `init` (current directory only), every command searches **upward** for `agsy.yaml` (same convention as git), so running from a project subdirectory works.
 - Interface language follows `AGSY_LANG` / `LC_ALL` / `LANG` (`zh*` → Traditional Chinese).
 - When double-clicked on Windows, agsy pauses before the window closes so the output stays readable.
+- `apply`, `clean` and `init` guard against concurrent runs in one project with a lock file (`.agsy.lock`, next to `agsy.yaml`), removed when the command finishes. A second run started meanwhile reports the lock and exits; a leftover lock older than 15 minutes (e.g. after a crash) is taken over automatically.
 
 Suggested rhythm per situation:
 
@@ -52,7 +53,7 @@ Generates (or edits) `agsy.yaml`.
 Asks in order: source paths (one per line) → tools to serve (multi-select: Claude Code, OpenAI Codex, Antigravity, Cursor) → conflict strategy per category (mandatory; recommended rules=rename, skills=error, workflows=rename) → output directory (default `.agsy`). After writing:
 
 - If a real `AGENTS.md` already exists at the project root, init says so immediately: agsy mounts its own generated `AGENTS.md` there and never merges or overwrites a real file — move its content into a source `rules/` directory, or rename the file to keep it.
-- Offers a checklist of generated paths to add to `.gitignore` (`.agsy/`, the mount links, the root `AGENTS.md`); pick the ones you want — some teams version their links on purpose.
+- Offers a checklist of generated paths to add to `.gitignore` (`.agsy/`, the lock file `.agsy.lock`, the mount links, the root `AGENTS.md`); pick the ones you want — some teams version their links on purpose.
 
 ### Edit mode (agsy.yaml exists)
 
