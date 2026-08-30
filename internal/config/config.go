@@ -178,6 +178,18 @@ func (c *Config) mergeMounts(in []MountCfg) []MountCfg {
 	var out []MountCfg
 	idx := map[string]int{}
 	for _, m := range in {
+		// An entry without dir never merges: ExpandPath("") resolves to the
+		// project root, so the entry would be folded into a "- dir: ." entry
+		// and its links silently re-anchored there. It is kept as its own
+		// entry so validate sees the missing dir and rejects it.
+		if m.Dir == "" {
+			cp := MountCfg{Links: map[string]string{}, OutsideProject: m.OutsideProject}
+			for k, v := range m.Links {
+				cp.Links[k] = v
+			}
+			out = append(out, cp)
+			continue
+		}
 		key := m.Dir
 		if abs, err := c.ExpandPath(m.Dir); err == nil {
 			key = ResolveSymlinks(abs)
