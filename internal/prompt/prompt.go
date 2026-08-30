@@ -49,11 +49,22 @@ func Confirm(msg string) bool {
 }
 
 // Input reads a line of text with a default value.
+// When nobody can answer (--yes, or stdin is not a terminal) the default is
+// taken right away instead of blocking on a read — an open pipe with no data
+// would otherwise hang the run. Same rule as Confirm / Select / MultiSelect.
 func Input(msg, def string) string {
 	if def != "" {
 		fmt.Printf(i18n.T("%s (default: %s): "), msg, def)
 	} else {
 		fmt.Printf("%s: ", msg)
+	}
+	if AssumeYes || !IsStdinTTY() {
+		if def != "" {
+			fmt.Printf(i18n.T("  (non-interactive; using default: %s)\n"), def)
+		} else {
+			fmt.Println()
+		}
+		return def
 	}
 	line, _ := reader.ReadString('\n')
 	line = strings.TrimSpace(line)

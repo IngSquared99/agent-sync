@@ -377,9 +377,16 @@ func (c *Config) validateMount() []string {
 	// no deeper mountable structure.
 	validTarget := map[string]bool{AgentsMD: true}
 	var validTops []string
+	// validTops lists each target once: categories sharing a "to" is a
+	// misconfiguration with its own error, and must not duplicate the hint.
+	seenTop := map[string]bool{AgentsMD: true}
 	for _, cat := range CategoryOrder {
-		validTarget[c.Build.Categories[cat].To] = true
-		validTops = append(validTops, c.Build.Categories[cat].To)
+		to := c.Build.Categories[cat].To
+		validTarget[to] = true
+		if !seenTop[to] {
+			seenTop[to] = true
+			validTops = append(validTops, to)
+		}
 	}
 	validTops = append(validTops, AgentsMD)
 	out := c.OutDir()
