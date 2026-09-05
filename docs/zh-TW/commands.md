@@ -82,7 +82,7 @@ agsy init --yes ~/all-ai-lib ./repo-ai-lib
 2. 每個來源路徑的存在性（不存在＝✘ 錯誤）。
 3. 每個來源的類別子目錄：缺子目錄只是 ⚠ 提示；存在的會統計可收錄檔數——**統計遵循與 build 完全相同的收錄規則**，每個被略過的檔案都附原因列出。
 4. 每個掛載點的狀態：不存在（可建立）／已是連結／指向別處或已斷（apply 可修復）／被實體目錄或檔案佔用（apply 會失敗，需手動處理）；每個 merge 目標：不存在（apply 建立）／是 JSON 物件（可合併）／symlink 或不是 JSON 物件（apply 會失敗）。
-5. hooks：每個 hook 目錄裡被 `command` 引用的腳本在 macOS / Linux 上是否有執行位元（沒有時 ⚠ 提示 `chmod +x`；若 command 已指定直譯器可忽略）；`build.tools` 有列但沒掛登記表的工具（來源真的有 hook 時才提示）。
+5. hooks：每個 hook 的 `command` 直接執行的腳本（第一個 `./` token）在 macOS / Linux 上是否有執行位元（沒有時 ⚠ 提示 `chmod +x`；交給直譯器的檔案不檢查）；`build.tools` 有列但沒掛登記表的工具（來源真的有 hook 時才提示）。
 6. **連結能力探測**：實際建立並移除一個暫時連結。
 
 結尾 `N 個錯誤,M 個警告`；有錯誤時 exit code 1。

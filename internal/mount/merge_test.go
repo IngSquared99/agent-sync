@@ -9,7 +9,12 @@ import (
 
 	"github.com/IngSquared99/agent-sync/internal/build"
 	"github.com/IngSquared99/agent-sync/internal/config"
+
+	"github.com/IngSquared99/agent-sync/i18n"
 )
+
+// Message assertions below compare the English source strings.
+func init() { i18n.SetLang("en") }
 
 const mergeYAML = `version: 2
 sources:
@@ -160,7 +165,7 @@ func TestMergeDetectsModifiedAndReplacesWholeGroup(t *testing.T) {
 	}
 	applyOnce(t, cfg, recs)
 	raw, _ = os.ReadFile(settings)
-	if strings.Contains(string(raw), "my-extra.sh") || strings.Contains(string(raw), "99") || !strings.Contains(string(raw), script) {
+	if strings.Contains(string(raw), "my-extra.sh") || strings.Contains(string(raw), `"timeout": 99`) || !strings.Contains(string(raw), script) {
 		t.Errorf("group not rebuilt:\n%s", raw)
 	}
 }
@@ -269,5 +274,114 @@ func TestIsFileTarget(t *testing.T) {
 		if IsFileTarget(s) {
 			t.Errorf("%s should not be a file target", s)
 		}
+	}
+}
+
+// ── additional edge cases ────────────────────────────────────────────
+
+func TestMergeHooksNullAndKeyPosition(t *testing.T) {
+	cfg, settings, script := setupMerge(t)
+	// "hooks": null is treated as absent; the key keeps its position
+	writeSettings(t, settings, `{"hooks": null, "model": "opus"}`)
+	applyOnce(t, cfg, nil)
+	raw, _ := os.ReadFile(settings)
+	s := string(raw)
+	if strings.Index(s, `"hooks"`) > strings.Index(s, `"model"`) || !strings.Contains(s, script) {
+		t.Errorf("hooks must stay first and be filled:\n%s", s)
+	}
+	// absent key is appended at the end
+	writeSettings(t, settings, `{"model": "opus", "env": {"A": "1"}}`)
+	applyOnce(t, cfg, nil)
+	raw, _ = os.ReadFile(settings)
+	s = string(raw)
+	if strings.Index(s, `"env"`) > strings.Index(s, `"hooks"`) {
+		t.Errorf("hooks must be appended after existing keys:\n%s", s)
+	}
+}
+
+func TestMergePreservesFilePermissions(t *testing.T) {
+	cfg, settings, _ := setupMerge(t)
+	writeSettings(t, settings, `{}`)
+	if err := os.Chmod(settings, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	applyOnce(t, cfg, nil)
+	fi, _ := os.Stat(settings)
+	if fi.Mode().Perm() != 0o600 {
+		t.Errorf("perm = %o, want 600", fi.Mode().Perm())
+	}
+	entries, _ := os.ReadDir(filepath.Dir(settings))
+	for _, e := range entries {
+		if strings.HasPrefix(e.Name(), ".agsy-merge-") {
+			t.Error("temp file left behind")
+		}
+	}
+}
+
+func TestMergeUserGroupWithNonAgsyStatusMessageIsForeign(t *testing.T) {
+	cfg, settings, _ := setupMerge(t)
+	writeSettings(t, settings, `{"hooks": {"PreToolUse": [{"matcher": "Bash", "hooks": [{"type": "http", "url": "http://x", "statusMessage": "agsy-lookalike"}]}]}}`)
+	plans, _ := InspectMerge(cfg, nil)
+	if plans[0].Owned != 0 {
+		t.Error("only the exact agsy: prefix marks ownership")
+	}
+	applyOnce(t, cfg, nil)
+	raw, _ := os.ReadFile(settings)
+	if !strings.Contains(string(raw), "agsy-lookalike") {
+		t.Error("foreign group must survive")
+	}
+}
+
+func TestMergeEmptyRegistryLeavesFileAlone(t *testing.T) {
+	cfg, settings, _ := setupMerge(t)
+	if err := os.WriteFile(filepath.Join(cfg.OutDir(), "hooks.claude.json"), []byte(`{"hooks":{}}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// no file → none created, state clean
+	plans, recs := applyOnce(t, cfg, nil)
+	if _, err := os.Stat(settings); !os.IsNotExist(err) {
+		t.Error("empty registry must not create settings.json")
+	}
+	if plans[0].State != MergeClean {
+		t.Errorf("state = %v, want Clean", plans[0].State)
+	}
+	// existing user file → untouched byte for byte
+	body := "{\n\t\"model\": \"opus\"\n}\n"
+	writeSettings(t, settings, body)
+	plans, recs = applyOnce(t, cfg, recs)
+	raw, _ := os.ReadFile(settings)
+	if string(raw) != body {
+		t.Errorf("file must be left as is when nothing is merged:\n%s", raw)
+	}
+	if plans[0].State != MergeClean {
+		t.Errorf("state = %v, want Clean", plans[0].State)
+	}
+	_ = recs
+}
+
+func TestRemoveMergeSkipsInvalidAndReports(t *testing.T) {
+	cfg, settings, _ := setupMerge(t)
+	_, recs := applyOnce(t, cfg, nil)
+	writeSettings(t, settings, `not json`)
+	cleaned, deleted, skipped, err := RemoveMerge(cfg, recs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(skipped) != 1 || len(cleaned)+len(deleted) != 0 {
+		t.Errorf("cleaned=%v deleted=%v skipped=%v", cleaned, deleted, skipped)
+	}
+	raw, _ := os.ReadFile(settings)
+	if string(raw) != "not json" {
+		t.Error("invalid file must not be touched")
+	}
+}
+
+func TestInspectMergeIgnoresForeignManifestRecords(t *testing.T) {
+	cfg, settings, _ := setupMerge(t)
+	writeSettings(t, settings, `{}`)
+	// a record for another path must not influence this target
+	plans, _ := InspectMerge(cfg, []build.MergeRecord{{Path: "/elsewhere/settings.json", Key: MergeKey, Hash: "x", Created: true}})
+	if plans[0].Created {
+		t.Error("created flag must come from a record for this exact path")
 	}
 }
