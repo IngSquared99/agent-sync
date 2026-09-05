@@ -197,10 +197,10 @@ events:                                        # 必填；至少一個事件
 
 **翻譯規則**：
 
-1. `target` 沒列的工具不寫入該家登記表（不回報，這是明確意圖）。
+1. `target` 沒列的工具不寫入該家登記表；plan 會註明少了哪幾家。`target` 若指到 `build.tools` 裡 agsy 沒有登記表格式的工具（四家內建工具以外的名字），plan 也會註明：該 hook 到不了那裡。
 2. 該家沒有的事件、不支援的 type 略過並在 plan 註明；某家一個事件都對不上時，登記表仍會產生（內容為空），連結不會斷。
-3. `overrides.<tool>` 的 key 只要是 agsy 認識的工具即可（不在 `build.tools` 就忽略），讓共用庫帶著四家的 overrides 也能在只用一家的專案使用；完全未知的名字才是錯誤。`matcher` 覆寫群組的 matcher；`hooks[i]` 依索引覆寫第 i 個 handler 的欄位。
-4. **路徑改寫**：`command` 以空白切 token，每個以 `./` 開頭的 token 改寫為指向 `.agsy/hooks/<name>/…` 的**絕對路徑**；其他 token 原樣（`python3 ./check.py` 自然成立）。引用的檔案不存在 → apply 拒絕。`.agsy/` 不進版控、每台機器各自 apply，絕對路徑在這裡沒有可攜性問題，也是 merge 判斷所有權的依據。
+3. `overrides.<tool>` 的 key 只要是 agsy 認識的工具即可（不在 `build.tools` 就忽略），讓共用庫帶著四家的 overrides 也能在只用一家的專案使用；完全未知的名字才是錯誤。`matcher` 覆寫群組的 matcher；`hooks[i]` 依索引覆寫第 i 個 handler 的欄位。override 把 handler 的 `type` 改成 command 以外的型別時，該家會捨棄已無意義的 `command` 欄位並註明。
+4. **路徑改寫**：`command` 裡每個以 `./` 開頭、以空白分隔的 token 改寫為指向 `.agsy/hooks/<name>/…` 的**絕對路徑**；字串其餘部分原樣保留（`python3 ./check.py` 自然成立）。各家工具會把 command 交給 shell 執行，所以改寫後的路徑在需要時會**加上引號**——專案放在 `My Projects/` 底下、或目錄名含 `|`，都能正常執行；一般路徑不加引號。引用的檔案不存在 → apply 拒絕，主 handler 與 `overrides` 裡的都一樣。`.agsy/` 不進版控、每台機器各自 apply，絕對路徑在這裡沒有可攜性問題。
 5. 其他 handler 欄位原樣透傳（三家同構）；Cursor 的攤平結構只保留 `timeout`、`failClosed`、`loop_limit`、`prompt`，其餘丟棄並回報。
 
 **agsy 只翻譯登記層，不翻譯腳本。** 四家餵給腳本的 stdin JSON 欄位不同（Claude / Codex 是 `tool_input.command`，Cursor 是另一套，Antigravity 又是一套），跨四家的腳本要自己看 `hook_event_name` 或各家欄位判斷。
@@ -224,10 +224,10 @@ events:                                        # 必填；至少一個事件
 
 Claude Code 的 hooks 沒有獨立檔，只能寫在 `.claude/settings.json` 的 `hooks` 鍵，而那份檔還裝著 permissions、model 等你自己的設定，整檔連結會吃掉它們。`merge` 的語意是「**只擁有 `hooks` 鍵裡自己的那幾筆條目**」：
 
-- **所有權判準**：`hooks` 鍵下某個 matcher 群組，只要有任一 handler 的 `command` 指向 `.agsy/hooks/`，就是 agsy 的。跟 `IsManagedLink`（連結指向產物就是 agsy 的）同一個邏輯。沒有 command 的 handler（http、prompt、agent、mcp_tool）沒有路徑可指，build 會在它們身上補一個官方的純顯示欄位 `statusMessage: "agsy:<hook 名>"`（你自己有寫就不動），判準也認這個前綴。
-- **apply**：移除舊的 agsy 群組、放入登記表的群組；其他鍵與其他群組原樣保留、順序不動（整份以兩空格重新縮排）。檔案不存在時建立並記錄「由 agsy 建立」；登記表為空且檔案不存在時不建立。
-- **status**：agsy 群組被改 → 列入產物端改動（apply 詢問後重建）；被刪 → 列入缺失（apply 復原）。你自己加的群組不算異常。
-- **clean**：移除 agsy 群組；`hooks` 空了就刪鍵；檔案是 agsy 建的且變空才刪檔。
+- **所有權判準**：`hooks` 鍵下某個 matcher 群組，只要有任一 handler 帶著官方的純顯示欄位 `statusMessage: "agsy:<hook 名>"`——build 會在每個為 Claude Code 寫出的 handler 補上它（`hook.yaml` 自己有寫就不動）——或 `command` 指向 `.agsy/hooks/`（目前的產物目錄，或上次 apply 記錄的那個），就是 agsy 的。這個標記讓**搬移專案**或**改名 `build.out`** 都安全：舊群組仍會被認出並取代，不會和新群組並存。精神同 `IsManagedLink`（連結指向產物就是 agsy 的）。唯一的縫：自己寫了 `statusMessage` 的 handler 只能靠路徑辨認，改名 `build.out`（manifest 隨舊目錄一起消失）之後，上次 apply 的這種群組會被當成別人的留下——請手動移除。
+- **apply**：移除舊的 agsy 群組、放入登記表的群組；其他鍵與其他群組原樣保留、順序不動（整份以兩空格重新縮排）。你寫的空殼會留著：agsy 加入之前就是空的事件陣列、或你自己放的 `hooks: {}`，絕不會被刪；apply 自己帶進來的 `hooks` 鍵與事件陣列，空掉時會一併移除（記錄在 manifest）。檔案不存在時建立並記錄「由 agsy 建立」。沒有東西可 merge、檔案裡也沒有 agsy 的東西時（狀態「閒置」），檔案既不建立也不改寫。
+- **status**：agsy 群組被改 → 列入產物端改動（apply 詢問後重建）；被刪 → 列入缺失（apply 復原）。你自己加的群組不算異常。先前 apply 曾 merge 進去、但 mount 設定已不再列出、且仍留有 agsy 群組的檔案，會回報為**孤兒**——跟孤兒連結一樣：apply 絕不碰它，clean 會清掉。
+- **clean**：移除 agsy 群組，目前的與孤兒目標都清；agsy 帶進來的 `hooks` 鍵與事件陣列一起移除，你的留著；檔案是 agsy 建的且變空才刪檔。閒置的目標不會被動到。
 - **拒絕**：目標是 symlink（agsy 絕不透過連結寫入）或不是 JSON 物件 → apply 前置檢查停下、clean 跳過並回報。
 - `merge` 的 value 必須是登記表名且該工具在 `build.tools`；同一 `dir` 內 `merge` 與 `links` 不得同名；`dir` 在專案外同樣需要 `outside_project: true`。
 - 只有一個 `merge`、沒有 `links` 的掛載條目是合法的。

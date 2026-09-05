@@ -309,7 +309,7 @@ func renderConfig(sources []string, out string, strategies map[string]string,
 	b.WriteString("    skills:    " + strategies["skills"] + "\n")
 	b.WriteString("    workflows: " + strategies["workflows"] + "\n")
 	b.WriteString("    hooks:     " + strategies["hooks"] + "\n\n")
-	b.WriteString("  tools: [" + strings.Join(tools, ", ") + "]" + i18n.T("   # valid values for a workflow's target: front matter\n"))
+	b.WriteString("  tools: [" + strings.Join(tools, ", ") + "]" + i18n.T("   # valid values for the target: field of workflows and hooks\n"))
 	b.WriteString("\nmount:\n")
 	if needAgentsMD(adapters, picked) || len(rootExtras) > 0 {
 		b.WriteString(i18n.T("  - dir: .                    # project root: AGENTS.md for Codex / Cursor / Antigravity\n"))

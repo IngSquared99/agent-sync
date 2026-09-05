@@ -75,7 +75,7 @@ func applyOnce(t *testing.T, cfg *config.Config, recs []build.MergeRecord) ([]Me
 	if err != nil {
 		t.Fatal(err)
 	}
-	out, err := ApplyMerge(cfg, plans)
+	out, err := ApplyMerge(cfg, plans, recs)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -181,7 +181,7 @@ func TestMergeInvalidTargets(t *testing.T) {
 		if plans[0].State != MergeInvalid {
 			t.Errorf("%s: state = %v, want Invalid", name, plans[0].State)
 		}
-		if _, err := ApplyMerge(cfg, plans); err == nil {
+		if _, err := ApplyMerge(cfg, plans, nil); err == nil {
 			t.Errorf("%s: ApplyMerge must refuse", name)
 		}
 	}
@@ -256,9 +256,12 @@ func TestOwnsGroup(t *testing.T) {
 		`5`: false,
 		`{"hooks":[{"type":"http","url":"http://x","statusMessage":"agsy:greet"}]}`: true,
 		`{"hooks":[{"type":"http","url":"http://x","statusMessage":"mine"}]}`:       false,
+		// a quoted path (project directory with a space) is still agsy's
+		`{"hooks":[{"command":` + jsonStr("'"+in+"'") + `}]}`:               true,
+		`{"hooks":[{"command":` + jsonStr("python3 \""+in+"\" --x") + `}]}`: true,
 	}
 	for g, want := range cases {
-		if got := ownsGroup(json.RawMessage(g), abs); got != want {
+		if got := ownsGroup(json.RawMessage(g), []string{abs}); got != want {
 			t.Errorf("ownsGroup(%s) = %v, want %v", g, got, want)
 		}
 	}
@@ -342,8 +345,8 @@ func TestMergeEmptyRegistryLeavesFileAlone(t *testing.T) {
 	if _, err := os.Stat(settings); !os.IsNotExist(err) {
 		t.Error("empty registry must not create settings.json")
 	}
-	if plans[0].State != MergeClean {
-		t.Errorf("state = %v, want Clean", plans[0].State)
+	if plans[0].State != MergeIdle {
+		t.Errorf("state = %v, want Idle", plans[0].State)
 	}
 	// existing user file → untouched byte for byte
 	body := "{\n\t\"model\": \"opus\"\n}\n"
@@ -353,10 +356,28 @@ func TestMergeEmptyRegistryLeavesFileAlone(t *testing.T) {
 	if string(raw) != body {
 		t.Errorf("file must be left as is when nothing is merged:\n%s", raw)
 	}
-	if plans[0].State != MergeClean {
-		t.Errorf("state = %v, want Clean", plans[0].State)
+	if plans[0].State != MergeIdle {
+		t.Errorf("state = %v, want Idle", plans[0].State)
 	}
-	_ = recs
+	// clean must neither create the file nor rewrite it (it held nothing of
+	// agsy's): an Idle target is left alone in both directions.
+	cleaned, deleted, _, err := RemoveMerge(cfg, recs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(cleaned) != 0 || len(deleted) != 0 {
+		t.Errorf("clean must not touch an idle target: cleaned=%v deleted=%v", cleaned, deleted)
+	}
+	if raw, _ := os.ReadFile(settings); string(raw) != body {
+		t.Errorf("clean rewrote a file holding nothing of agsy's:\n%s", raw)
+	}
+	os.Remove(settings)
+	if _, _, _, err := RemoveMerge(cfg, recs); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(settings); !os.IsNotExist(err) {
+		t.Error("clean must not create a settings.json out of nothing")
+	}
 }
 
 func TestRemoveMergeSkipsInvalidAndReports(t *testing.T) {
@@ -383,5 +404,90 @@ func TestInspectMergeIgnoresForeignManifestRecords(t *testing.T) {
 	plans, _ := InspectMerge(cfg, []build.MergeRecord{{Path: "/elsewhere/settings.json", Key: MergeKey, Hash: "x", Created: true}})
 	if plans[0].Created {
 		t.Error("created flag must come from a record for this exact path")
+	}
+}
+
+// Empty shells the user wrote survive: an event array that was empty
+// before agsy added to it is empty again after clean, and the "hooks" key
+// stays even when it ends up empty. Only a file agsy created goes away.
+func TestMergeKeepsUserEmptyShells(t *testing.T) {
+	cfg, settings, _ := setupMerge(t)
+	writeSettings(t, settings, `{"model":"opus","hooks":{"PreToolUse":[],"Stop":[]}}`)
+	_, recs := applyOnce(t, cfg, nil)
+	raw, _ := os.ReadFile(settings)
+	if !strings.Contains(string(raw), `"Stop": []`) {
+		t.Errorf("apply must keep the user's empty Stop array:\n%s", raw)
+	}
+	if _, _, _, err := RemoveMerge(cfg, recs); err != nil {
+		t.Fatal(err)
+	}
+	raw, _ = os.ReadFile(settings)
+	var doc map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &doc); err != nil {
+		t.Fatal(err)
+	}
+	if string(doc["hooks"]) == "" {
+		t.Fatalf("clean must keep the hooks key the user wrote:\n%s", raw)
+	}
+	var hooks map[string][]json.RawMessage
+	if err := json.Unmarshal(doc["hooks"], &hooks); err != nil {
+		t.Fatal(err)
+	}
+	if len(hooks["PreToolUse"]) != 0 || len(hooks["Stop"]) != 0 || len(hooks) != 2 {
+		t.Errorf("clean must restore the user's empty arrays: %s", doc["hooks"])
+	}
+
+	// Brought in by agsy alone: the file goes away with its shells.
+	os.Remove(settings)
+	_, recs = applyOnce(t, cfg, nil)
+	if _, deleted, _, err := RemoveMerge(cfg, recs); err != nil || len(deleted) != 1 {
+		t.Fatalf("file created by agsy must be deleted on clean: %v %v", deleted, err)
+	}
+}
+
+// Groups of an earlier apply whose command points into a previous output
+// directory (recorded in the manifest) are still agsy's.
+func TestMergeRecordedHooksDirStillOwned(t *testing.T) {
+	cfg, settings, _ := setupMerge(t)
+	old := filepath.Join(filepath.Dir(cfg.OutDir()), ".old-out", "hooks")
+	writeSettings(t, settings, `{"hooks":{"PreToolUse":[{"matcher":"Bash","hooks":[{"type":"command","command":`+jsonStr(filepath.Join(old, "block-rm", "block-rm.sh"))+`}]}]}}`)
+	recs := []build.MergeRecord{{Path: settings, Key: MergeKey, Hash: "stale", Created: false, HooksDir: old}}
+	plans, err := InspectMerge(cfg, recs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if plans[0].Owned != 1 {
+		t.Fatalf("group under the recorded hooks dir must be owned, got %d", plans[0].Owned)
+	}
+	_, recs = applyOnce(t, cfg, recs)
+	raw, _ := os.ReadFile(settings)
+	if strings.Contains(string(raw), ".old-out") || strings.Count(string(raw), "block-rm.sh") != 1 {
+		t.Errorf("old group must be replaced, not kept beside the new one:\n%s", raw)
+	}
+	if recs[0].HooksDir != filepath.Join(cfg.OutDir(), "hooks") {
+		t.Errorf("record must carry the current hooks dir: %q", recs[0].HooksDir)
+	}
+}
+
+// When the registry moves a hook to another event, the event array apply
+// itself introduced last time does not linger as an empty shell.
+func TestMergeDropsOwnEmptyEventOnChange(t *testing.T) {
+	cfg, settings, script := setupMerge(t)
+	writeSettings(t, settings, `{"model":"opus"}`)
+	_, recs := applyOnce(t, cfg, nil)
+	if recs[0].AddedKey != true || len(recs[0].AddedEvents) != 1 || recs[0].AddedEvents[0] != "PreToolUse" {
+		t.Fatalf("record must name the shells apply added: %+v", recs[0])
+	}
+	reg := `{"hooks":{"Stop":[{"hooks":[{"type":"command","command":` + jsonStr(script) + `}]}]}}`
+	if err := os.WriteFile(filepath.Join(cfg.OutDir(), "hooks.claude.json"), []byte(reg), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	_, recs = applyOnce(t, cfg, recs)
+	raw, _ := os.ReadFile(settings)
+	if strings.Contains(string(raw), "PreToolUse") || !strings.Contains(string(raw), `"Stop"`) {
+		t.Errorf("empty PreToolUse shell must go, Stop must appear:\n%s", raw)
+	}
+	if len(recs[0].AddedEvents) != 1 || recs[0].AddedEvents[0] != "Stop" {
+		t.Errorf("record must follow: %+v", recs[0])
 	}
 }

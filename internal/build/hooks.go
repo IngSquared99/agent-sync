@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strings"
 
@@ -31,9 +32,11 @@ import (
 // HookFile is the declaration file every hook directory must contain.
 const HookFile = "hook.yaml"
 
-// OwnerMark prefixes the statusMessage agsy sets on non-command handlers in
-// nested registries, so a merge target can recognise groups that contain no
-// command path into the output.
+// OwnerMark prefixes the statusMessage agsy sets on every handler it writes
+// for a merged dialect (Claude Code), unless the hook.yaml already set one.
+// A merge target recognises its groups by this mark first and by a command
+// path into the output second (see mount.ownsGroup): the mark survives a
+// moved project or a renamed build.out, the path does not.
 const OwnerMark = "agsy:"
 
 // HookSpec is the parsed hook.yaml.
@@ -83,6 +86,7 @@ type dialect struct {
 	shape      hookShape
 	matcherOn  map[string]bool // named shape: events that honor a matcher (nil = all)
 	flatFields map[string]bool // flat shape: handler fields carried over besides command/matcher
+	ownerMark  bool            // registry is merged into a user file: mark every handler agsy writes
 }
 
 func same(names ...string) map[string]string {
@@ -106,8 +110,9 @@ var dialects = map[string]dialect{
 		events: same("PreToolUse", "PostToolUse", "Stop", "SessionStart", "SessionEnd",
 			"UserPromptSubmit", "PermissionRequest", "SubagentStart", "SubagentStop",
 			"PreCompact", "PostToolUseFailure", "StopFailure"),
-		types: set("command", "http", "mcp_tool", "prompt", "agent"),
-		shape: shapeNested,
+		types:     set("command", "http", "mcp_tool", "prompt", "agent"),
+		shape:     shapeNested,
+		ownerMark: true,
 	},
 	"codex": {
 		events: same("PreToolUse", "PostToolUse", "Stop", "SessionStart", "SessionEnd",
@@ -307,21 +312,14 @@ func resolveHooks(cfg *config.Config, p *Plan) {
 		}
 		// Every ./ path a command refers to must exist in the hook directory:
 		// a registry pointing at a missing script would fail at the worst
-		// moment (inside the tool), so it fails here instead.
+		// moment (inside the tool), so it fails here instead. Overrides can
+		// replace the command per tool, so their commands are checked too.
 		missing := ""
-		for _, groups := range spec.Events {
-			for _, g := range groups {
-				for _, h := range g.Hooks {
-					if handlerType(h) != "command" {
-						continue
-					}
-					c, _ := h["command"].(string)
-					for _, tok := range strings.Fields(c) {
-						if strings.HasPrefix(tok, "./") {
-							if _, err := os.Stat(filepath.Join(it.From, filepath.FromSlash(tok[2:]))); err != nil && missing == "" {
-								missing = tok[2:]
-							}
-						}
+		for _, c := range commandsOf(spec) {
+			for _, tok := range splitCommand(c) {
+				if strings.HasPrefix(tok, "./") {
+					if _, err := os.Stat(filepath.Join(it.From, filepath.FromSlash(tok[2:]))); err != nil && missing == "" {
+						missing = tok[2:]
 					}
 				}
 			}
@@ -339,11 +337,18 @@ func resolveHooks(cfg *config.Config, p *Plan) {
 		it.Hook = spec
 		it.Tools = targets
 		it.HookOut = map[string]bool{}
+		var excluded, noDialect []string
 		for _, tool := range cfg.Build.Tools {
-			if !HasHookDialect(tool) {
+			if !containsStr(targets, tool) {
+				if HasHookDialect(tool) {
+					excluded = append(excluded, tool)
+				}
 				continue
 			}
-			if !containsStr(targets, tool) {
+			if !HasHookDialect(tool) {
+				// build.tools is an open list; a tool agsy cannot write a
+				// registry for silently receives nothing, so say so.
+				noDialect = append(noDialect, tool)
 				continue
 			}
 			reg, notes := translateHook(spec, it.OutName, tool, "")
@@ -352,31 +357,72 @@ func resolveHooks(cfg *config.Config, p *Plan) {
 			}
 			it.HookOut[tool] = len(reg.events) > 0
 		}
+		if len(excluded) > 0 {
+			it.RouteNote = appendNote(it.RouteNote, fmt.Sprintf(i18n.T("%s: %s leaves out %s"), it.OutName, TargetField, strings.Join(excluded, ", ")))
+		}
+		for _, tool := range noDialect {
+			it.RouteNote = appendNote(it.RouteNote, fmt.Sprintf(i18n.T("%s: agsy has no hook registry format for %q; the hook does not reach that tool"), it.OutName, tool))
+		}
 	}
+}
+
+// commandsOf lists every command string a hook may execute: the handlers of
+// each group plus every per-tool override that replaces a command. Order is
+// deterministic (events in genericEvents order, tools sorted).
+func commandsOf(spec *HookSpec) []string {
+	var out []string
+	for _, ev := range genericEvents {
+		for _, g := range spec.Events[ev] {
+			for _, h := range g.Hooks {
+				if handlerType(h) == "command" {
+					c, _ := h["command"].(string)
+					out = append(out, c)
+				}
+			}
+			var tools []string
+			for tool := range g.Overrides {
+				tools = append(tools, tool)
+			}
+			sort.Strings(tools)
+			for _, tool := range tools {
+				ov := g.Overrides[tool]
+				if ov == nil {
+					continue
+				}
+				for hi, oh := range ov.Hooks {
+					if oh == nil || hi >= len(g.Hooks) {
+						continue
+					}
+					merged := cloneHandler(g.Hooks[hi])
+					for k, v := range oh {
+						merged[k] = v
+					}
+					if _, replaced := oh["command"]; replaced && handlerType(merged) == "command" {
+						c, _ := merged["command"].(string)
+						out = append(out, c)
+					}
+				}
+			}
+		}
+	}
+	return out
 }
 
 // HookScriptPaths lists the ./ paths that command handlers execute directly
 // (the first token of the command, relative to the hook directory), for
 // doctor's executable-bit check. Paths passed to an interpreter are not
-// listed. A broken hook.yaml yields nothing; plan reports it.
+// listed. Overrides that replace the command count as well. A broken
+// hook.yaml yields nothing; plan reports it.
 func HookScriptPaths(hookDir string) []string {
 	spec, err := parseHookSpec(filepath.Join(hookDir, HookFile))
 	if err != nil || spec == nil {
 		return nil
 	}
 	var out []string
-	for _, groups := range spec.Events {
-		for _, g := range groups {
-			for _, h := range g.Hooks {
-				if handlerType(h) != "command" {
-					continue
-				}
-				c, _ := h["command"].(string)
-				toks := strings.Fields(c)
-				if len(toks) > 0 && strings.HasPrefix(toks[0], "./") && !containsStr(out, toks[0][2:]) {
-					out = append(out, toks[0][2:])
-				}
-			}
+	for _, c := range commandsOf(spec) {
+		toks := splitCommand(c)
+		if len(toks) > 0 && strings.HasPrefix(toks[0], "./") && !containsStr(out, toks[0][2:]) {
+			out = append(out, toks[0][2:])
 		}
 	}
 	sort.Strings(out)
@@ -441,11 +487,19 @@ func translateHook(spec *HookSpec, name, tool, absHookDir string) (translated, [
 				if typ == "command" {
 					c, _ := h["command"].(string)
 					h["command"] = rewriteCommand(c, absHookDir)
-				} else if d.shape == shapeNested {
-					// Ownership of a merged group is derived from a command path
-					// into the output. Non-command handlers have no such path, so
-					// they carry the display-only statusMessage field with the
-					// OwnerMark prefix (see mount.ownsGroup).
+				} else if _, has := h["command"]; has {
+					// An override switched the type away from command (or the
+					// source mixed the two): the command field would be
+					// meaningless to the vendor, so it is dropped, audibly.
+					delete(h, "command")
+					notes = append(notes, fmt.Sprintf(i18n.T("%s: handler %d of %s is of type %q for %s; its command field is dropped there"), name, hi+1, ev, typ, tool))
+				}
+				if d.ownerMark {
+					// The registry is merged into a user-owned file; every
+					// handler agsy writes carries the display-only statusMessage
+					// with the OwnerMark prefix so mount.ownsGroup can tell
+					// agsy's groups from the user's even after the project moved.
+					// A statusMessage set in hook.yaml is the user's and stays.
 					if _, has := h["statusMessage"]; !has {
 						h["statusMessage"] = OwnerMark + name
 					}
@@ -511,20 +565,115 @@ func cloneHandler(h map[string]interface{}) map[string]interface{} {
 }
 
 // rewriteCommand replaces every whitespace-separated token starting with ./
-// by the absolute path inside absHookDir. Only ./ tokens are touched: the
-// rule stays predictable and documentable ("python3 ./check.py" works).
+// by the absolute path inside absHookDir. Only ./ tokens are touched and the
+// rest of the string (other tokens, spacing) is kept byte for byte: the rule
+// stays predictable and documentable ("python3 ./check.py" works). The
+// vendor hands the command to a shell, so a rewritten path is quoted when it
+// needs to be (spaces, |, &, …): a project under "My Projects/" must work.
 func rewriteCommand(cmd, absHookDir string) string {
 	if absHookDir == "" {
 		return cmd
 	}
-	toks := strings.Fields(cmd)
-	for i, tok := range toks {
+	var b strings.Builder
+	i := 0
+	for i < len(cmd) {
+		if isSpace(cmd[i]) {
+			b.WriteByte(cmd[i])
+			i++
+			continue
+		}
+		j := i
+		for j < len(cmd) && !isSpace(cmd[j]) {
+			j++
+		}
+		tok := cmd[i:j]
 		if strings.HasPrefix(tok, "./") {
-			toks[i] = filepath.Join(absHookDir, filepath.FromSlash(tok[2:]))
+			tok = shellQuote(filepath.Join(absHookDir, filepath.FromSlash(tok[2:])))
+		}
+		b.WriteString(tok)
+		i = j
+	}
+	return b.String()
+}
+
+func isSpace(c byte) bool { return c == ' ' || c == '\t' || c == '\n' || c == '\r' }
+
+// shellQuote quotes p for the shell the vendor runs commands with when p
+// contains anything beyond the plain path character set. On Windows
+// (cmd.exe / PowerShell) that is double quotes; elsewhere single quotes, the
+// POSIX form that needs no escaping except for a literal single quote.
+func shellQuote(p string) string {
+	if !needsQuote(p) {
+		return p
+	}
+	if runtime.GOOS == "windows" {
+		return `"` + strings.ReplaceAll(p, `"`, `\"`) + `"`
+	}
+	return "'" + strings.ReplaceAll(p, "'", `'\''`) + "'"
+}
+
+func needsQuote(p string) bool {
+	for _, r := range p {
+		switch {
+		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9':
+		case r == '/' || r == '.' || r == '_' || r == '-' || r == ':' || r == '\\':
+		default:
+			return true
 		}
 	}
-	return strings.Join(toks, " ")
+	return false
 }
+
+// splitCommand splits a command string into tokens the way a shell would
+// see them as far as quoting goes: single- and double-quoted runs stay one
+// token with the quotes removed, so a path rewritten by rewriteCommand comes
+// back as the plain path. Used to recognise agsy's own paths in a registry
+// and to check ./ references in a hook.yaml.
+func splitCommand(cmd string) []string {
+	var out []string
+	var cur strings.Builder
+	inTok := false
+	quote := byte(0)
+	for i := 0; i < len(cmd); i++ {
+		c := cmd[i]
+		switch {
+		case quote != 0:
+			if c == quote {
+				quote = 0
+			} else if quote == '"' && c == '\\' && i+1 < len(cmd) && cmd[i+1] == '"' {
+				cur.WriteByte('"')
+				i++
+			} else {
+				cur.WriteByte(c)
+			}
+		case c == '\'' || c == '"':
+			quote = c
+			inTok = true
+		case c == '\\' && runtime.GOOS != "windows" && i+1 < len(cmd) && !isSpace(cmd[i+1]):
+			// POSIX escape outside quotes ('\'' inside a single-quoted path);
+			// on Windows a backslash is a path separator, never an escape.
+			cur.WriteByte(cmd[i+1])
+			i++
+			inTok = true
+		case isSpace(c):
+			if inTok {
+				out = append(out, cur.String())
+				cur.Reset()
+				inTok = false
+			}
+		default:
+			cur.WriteByte(c)
+			inTok = true
+		}
+	}
+	if inTok {
+		out = append(out, cur.String())
+	}
+	return out
+}
+
+// SplitCommand is splitCommand for other packages (mount's ownership check).
+func SplitCommand(cmd string) []string { return splitCommand(cmd) }
 
 // orderedObj is a JSON object with a fixed key order (encoding/json sorts map
 // keys, which would scatter "type"/"command" among other fields and make the

@@ -21,7 +21,7 @@ import (
 
 // Item is one entry of the candidate list: in-memory intermediate data of the build
 type Item struct {
-	Category  string          // rules / skills / workflows
+	Category  string          // rules / skills / workflows / hooks
 	Name      string          // original file or directory name
 	OutName   string          // final name after conflict handling (equals Name when there is no conflict)
 	From      string          // absolute source path
@@ -107,6 +107,15 @@ type MergeRecord struct {
 	Key     string `json:"key"`     // top-level key holding the entries (always "hooks")
 	Hash    string `json:"hash"`    // canonical hash of the agsy-owned entries written
 	Created bool   `json:"created"` // the file did not exist before apply created it
+	// HooksDir is the absolute output hooks directory the written command
+	// paths pointed into. After build.out is renamed it lets inspect still
+	// recognise the groups of the previous apply by their old path.
+	HooksDir string `json:"hooksDir,omitempty"`
+	// AddedKey and AddedEvents record which shells apply itself introduced
+	// (the "hooks" key, event arrays): those are removed again when empty,
+	// while shells the user wrote are kept even when empty.
+	AddedKey    bool     `json:"addedKey,omitempty"`
+	AddedEvents []string `json:"addedEvents,omitempty"`
 }
 
 // SourceState is the result of expanding a source

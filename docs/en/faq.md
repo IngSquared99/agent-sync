@@ -126,6 +126,8 @@ Yes, by design:
 
 Links created by an earlier apply whose tool you later removed from the mount config. The tool keeps reading old content through them, so status keeps reminding you. `apply` never deletes them; remove them manually, or `agsy clean` clears them along with everything else.
 
+The same applies to a merge target (Claude Code's `settings.json`) you removed from the mount config: agsy's entries stay in the `hooks` key and the tool keeps running them, so status lists the file as an orphan until you remove the entries by hand or run `agsy clean`.
+
 ### Q24: Could agsy copy out files that symlinks in my sources point to (e.g. a private key)?
 
 No. Scanning never collects symbolic links (including inside skill directories — a skill containing a link is skipped entirely), and the copy phase refuses links as a second line of defense. The output is mounted for every tool to read; a link must never smuggle in files from outside a source.
@@ -158,7 +160,7 @@ The registry can (agsy translates event names, structure and paths); the script 
 
 ### Q31: The script does not run on Windows?
 
-agsy guarantees a correct registry (paths escaped), but a `.sh` cannot run on Windows directly. Name an interpreter in `hook.yaml` (`command: python3 ./check.py`) or use the vendor's own field through `overrides`, e.g. `overrides.codex.hooks[0].commandWindows`.
+agsy guarantees a correct registry (paths are absolute and quoted when they contain spaces or shell metacharacters), but a `.sh` cannot run on Windows directly. Name an interpreter in `hook.yaml` (`command: python3 ./check.py`) or use the vendor's own field through `overrides`, e.g. `overrides.codex.hooks[0].commandWindows`.
 
 ### Q32: After upgrading from v0.1, apply says `build.on_conflict.hooks is not set`?
 
