@@ -45,7 +45,7 @@
   "   ⚠ this path is not inside the configured sources; verify it before merging": "   ⚠ 此路徑不在目前設定的 sources 內,合併前請先確認",
   "  %-28s ← [%d] %s   (first strategy, will be dropped)\n": "  %-28s ← [%d] %s   (first 策略,將丟棄)\n",
   "  %-28s ⚠ %s (apply will rebuild and fix it)\n": "  %-28s ⚠ %s(apply 時會重建修正)\n",
-  "  %-28s ⚠ %s/%s is not executable (chmod +x, unless the command names an interpreter)\n": "  %-28s ⚠ %s/%s 沒有執行權限（chmod +x；若 command 已指定直譯器則可忽略）\n",
+  "  %-28s ⚠ %s/%s is not executable (chmod +x)\n": "  %-28s ⚠ %s/%s 沒有執行權限(chmod +x)\n",
   "  %-28s ⚠ %s; apply will fail, handle it manually\n": "  %-28s ⚠ %s;apply 會失敗,請手動處理\n",
   "  %-28s ⚠ a real directory or file exists; apply will fail, handle it manually\n": "  %-28s ⚠ 已存在實體目錄或檔案,apply 時將報錯,需手動處理\n",
   "  %-28s ⚠ build.tools lists %q, but nothing mounts %s; hooks will not reach that tool\n": "  %-28s ⚠ build.tools 列出 %q,但沒有任何掛載指向 %s;hooks 不會送到該工具\n",

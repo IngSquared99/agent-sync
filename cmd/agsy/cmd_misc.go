@@ -173,7 +173,7 @@ func cmdDoctor() int {
 					for _, rel := range build.HookScriptPaths(filepath.Join(dir, e.Name())) {
 						if runtime.GOOS != "windows" {
 							if fi, err := os.Stat(filepath.Join(dir, e.Name(), rel)); err == nil && fi.Mode().Perm()&0o111 == 0 {
-								fmt.Printf(i18n.T("  %-28s ⚠ %s/%s is not executable (chmod +x, unless the command names an interpreter)\n"), "", e.Name(), rel)
+								fmt.Printf(i18n.T("  %-28s ⚠ %s/%s is not executable (chmod +x)\n"), "", e.Name(), rel)
 								warns++
 							}
 						}

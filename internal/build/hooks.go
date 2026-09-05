@@ -355,9 +355,10 @@ func resolveHooks(cfg *config.Config, p *Plan) {
 	}
 }
 
-// HookScriptPaths lists the ./ paths the hook's command handlers refer to
-// (relative to the hook directory), for doctor's executable-bit check. A
-// broken hook.yaml yields nothing; plan reports it.
+// HookScriptPaths lists the ./ paths that command handlers execute directly
+// (the first token of the command, relative to the hook directory), for
+// doctor's executable-bit check. Paths passed to an interpreter are not
+// listed. A broken hook.yaml yields nothing; plan reports it.
 func HookScriptPaths(hookDir string) []string {
 	spec, err := parseHookSpec(filepath.Join(hookDir, HookFile))
 	if err != nil || spec == nil {
@@ -371,10 +372,9 @@ func HookScriptPaths(hookDir string) []string {
 					continue
 				}
 				c, _ := h["command"].(string)
-				for _, tok := range strings.Fields(c) {
-					if strings.HasPrefix(tok, "./") && !containsStr(out, tok[2:]) {
-						out = append(out, tok[2:])
-					}
+				toks := strings.Fields(c)
+				if len(toks) > 0 && strings.HasPrefix(toks[0], "./") && !containsStr(out, toks[0][2:]) {
+					out = append(out, toks[0][2:])
 				}
 			}
 		}
@@ -635,6 +635,11 @@ func buildRegistry(cfg *config.Config, p *Plan, tool, outDir string) (interface{
 			merged.Groups[ev] = append(merged.Groups[ev], tr.events[ev]...)
 		}
 	}
+	// Events in genericEvents order (native names differ only for the flat
+	// dialect, whose mapping preserves that order).
+	sort.SliceStable(merged.Order, func(i, j int) bool {
+		return eventRank(merged.Order[i], d) < eventRank(merged.Order[j], d)
+	})
 	switch d.shape {
 	case shapeNamed:
 		if named.vals == nil {
@@ -651,6 +656,16 @@ func buildRegistry(cfg *config.Config, p *Plan, tool, outDir string) (interface{
 		doc.set("hooks", eventsObj(merged))
 		return doc, nil
 	}
+}
+
+// eventRank returns the position of a native event name in genericEvents.
+func eventRank(native string, d dialect) int {
+	for i, ev := range genericEvents {
+		if d.events[ev] == native {
+			return i
+		}
+	}
+	return len(genericEvents)
 }
 
 func eventsObj(r RegistryGroups) orderedObj {
