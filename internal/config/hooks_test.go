@@ -3,7 +3,12 @@ package config
 import (
 	"strings"
 	"testing"
+
+	"github.com/IngSquared99/agent-sync/i18n"
 )
+
+// Message assertions below compare the English source strings.
+func init() { i18n.SetLang("en") }
 
 // Config validation for the hooks category: one case per rule.
 

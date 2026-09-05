@@ -82,7 +82,7 @@ Read-only health check; performs no actions:
 2. Each source path's existence (missing = ✘ error).
 3. Each source's category subdirectories: a missing subdirectory is only a ⚠ note; existing ones get a count of collectible files — **the count follows exactly the same acceptance rules as the build**, and every skipped file is listed with its reason.
 4. Each mount point's state: absent (creatable) / already a link / pointing elsewhere or broken (apply repairs) / occupied by a real directory or file (apply will fail; handle manually); each merge target: absent (apply creates it) / a JSON object (mergeable) / a symlink or not a JSON object (apply will fail).
-5. Hooks: whether the scripts a hook's `command` refers to carry the executable bit on macOS / Linux (⚠ suggesting `chmod +x`; ignorable when the command names an interpreter); tools listed in `build.tools` whose registry nothing mounts (only when the sources actually hold hooks).
+5. Hooks: whether the scripts a hook's `command` executes directly (its first `./` token) carry the executable bit on macOS / Linux (⚠ suggesting `chmod +x`; files passed to an interpreter are not checked); tools listed in `build.tools` whose registry nothing mounts (only when the sources actually hold hooks).
 6. **Link capability probe**: an actual temporary link is created and removed.
 
 Ends with `N errors, M warnings`; exit code 1 when errors exist.

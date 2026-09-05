@@ -8,7 +8,12 @@ import (
 	"testing"
 
 	"github.com/IngSquared99/agent-sync/internal/config"
+
+	"github.com/IngSquared99/agent-sync/i18n"
 )
+
+// Message assertions below compare the English source strings.
+func init() { i18n.SetLang("en") }
 
 const hooksYAML = `version: 2
 sources:
@@ -404,5 +409,212 @@ func TestLoadRegistryGroups(t *testing.T) {
 	}
 	if len(r.Order) != 1 || r.Order[0] != "PreToolUse" || len(r.Groups["PreToolUse"]) != 1 {
 		t.Errorf("groups = %+v", r)
+	}
+}
+
+// ── additional edge cases ────────────────────────────────────────────
+
+func TestHookOverridesHandlerFieldsAndPassthrough(t *testing.T) {
+	cfg, lib := setupHooks(t, "error")
+	writeFile(t, filepath.Join(lib, "hooks", "block-rm", "hook.yaml"), `events:
+  PreToolUse:
+    - matcher: Bash
+      hooks:
+        - command: ./block-rm.sh
+          timeout: 10
+          statusMessage: checking
+          async: true
+      overrides:
+        codex:  { hooks: [ { commandWindows: "powershell ./block-rm.ps1", timeout: 5 } ] }
+        cursor: { matcher: Shell, hooks: [ { failClosed: true } ] }
+`)
+	p := compute(t, cfg)
+	if _, err := Execute(cfg, p); err != nil {
+		t.Fatal(err)
+	}
+	out := cfg.OutDir()
+	cl := readJSON(t, filepath.Join(out, "hooks.claude.json"))
+	h := cl["hooks"].(map[string]interface{})["PreToolUse"].([]interface{})[0].(map[string]interface{})["hooks"].([]interface{})[0].(map[string]interface{})
+	if h["timeout"] != float64(10) || h["statusMessage"] != "checking" || h["async"] != true {
+		t.Errorf("claude must pass unknown fields through untouched: %v", h)
+	}
+	if _, has := h["commandWindows"]; has {
+		t.Error("codex-only override leaked into claude")
+	}
+	cx := readJSON(t, filepath.Join(out, "hooks.codex.json"))
+	h = cx["hooks"].(map[string]interface{})["PreToolUse"].([]interface{})[0].(map[string]interface{})["hooks"].([]interface{})[0].(map[string]interface{})
+	if h["timeout"] != float64(5) || h["commandWindows"] != "powershell ./block-rm.ps1" {
+		t.Errorf("codex override not applied: %v", h)
+	}
+	cu := readJSON(t, filepath.Join(out, "hooks.cursor.json"))
+	fh := cu["hooks"].(map[string]interface{})["preToolUse"].([]interface{})[0].(map[string]interface{})
+	if fh["failClosed"] != true || fh["matcher"] != "Shell" || fh["timeout"] != float64(10) {
+		t.Errorf("cursor override / passthrough wrong: %v", fh)
+	}
+	for _, k := range []string{"statusMessage", "async"} {
+		if _, has := fh[k]; has {
+			t.Errorf("cursor must drop %s", k)
+		}
+	}
+	var it Item
+	for _, x := range p.Items {
+		if x.Name == "block-rm" {
+			it = x
+		}
+	}
+	if !strings.Contains(it.RouteNote, `cursor ignores handler field "async"`) || !strings.Contains(it.RouteNote, `cursor ignores handler field "statusMessage"`) {
+		t.Errorf("dropped cursor fields must be noted: %q", it.RouteNote)
+	}
+}
+
+func TestHookTargetAsStringAndCustomFrom(t *testing.T) {
+	yaml := strings.Replace(strings.Replace(hooksYAML, "%s", "error", 1), "  out: .agsy\n", "  out: .agsy\n  categories: {hooks: {from: hook}}\n", 1)
+	cfg := newProject(t, yaml)
+	lib := filepath.Join(filepath.Dir(cfg.BaseDir), "lib")
+	writeFile(t, filepath.Join(lib, "hook", "only-cursor", "hook.yaml"), "target: cursor\nevents:\n  Stop:\n    - hooks: [{command: ./s.sh}]\n")
+	writeFile(t, filepath.Join(lib, "hook", "only-cursor", "s.sh"), "")
+	p := compute(t, cfg)
+	if got := names(p, "hooks"); len(got) != 1 || got[0] != "only-cursor" {
+		t.Fatalf("custom from not scanned: %v (route errors %v)", got, p.RouteErrors)
+	}
+	if _, err := Execute(cfg, p); err != nil {
+		t.Fatal(err)
+	}
+	out := cfg.OutDir()
+	if _, err := os.Stat(filepath.Join(out, "hooks", "only-cursor", "s.sh")); err != nil {
+		t.Error("custom from must still land in the default to directory")
+	}
+	cu := readJSON(t, filepath.Join(out, "hooks.cursor.json"))
+	if _, has := cu["hooks"].(map[string]interface{})["stop"]; !has {
+		t.Error("string target must be honored")
+	}
+	cl := readJSON(t, filepath.Join(out, "hooks.claude.json"))
+	if len(cl["hooks"].(map[string]interface{})) != 0 {
+		t.Error("claude must not receive a cursor-only hook")
+	}
+}
+
+func TestHookBOMAndAntigravityMatcherStripped(t *testing.T) {
+	cfg, lib := setupHooks(t, "error")
+	writeFile(t, filepath.Join(lib, "hooks", "block-rm", "hook.yaml"), "\ufeff"+`events:
+  Stop:
+    - matcher: anything
+      hooks: [{command: ./block-rm.sh}]
+`)
+	p := compute(t, cfg)
+	if len(p.RouteErrors) > 0 {
+		t.Fatalf("BOM must be tolerated: %v", p.RouteErrors)
+	}
+	if _, err := Execute(cfg, p); err != nil {
+		t.Fatal(err)
+	}
+	ag := readJSON(t, filepath.Join(cfg.OutDir(), "hooks.antigravity.json"))
+	g := ag["block-rm"].(map[string]interface{})["Stop"].([]interface{})[0].(map[string]interface{})
+	if _, has := g["matcher"]; has {
+		t.Error("antigravity honors matcher on Pre/PostToolUse only")
+	}
+	cl := readJSON(t, filepath.Join(cfg.OutDir(), "hooks.claude.json"))
+	g = cl["hooks"].(map[string]interface{})["Stop"].([]interface{})[0].(map[string]interface{})
+	if g["matcher"] != "anything" {
+		t.Error("claude keeps the matcher")
+	}
+}
+
+func TestHookRegistryEventOrder(t *testing.T) {
+	cfg, lib := setupHooks(t, "error")
+	writeFile(t, filepath.Join(lib, "hooks", "aaa-late", "hook.yaml"), "events:\n  Stop:\n    - hooks: [{command: ./x}]\n  PostToolUse:\n    - hooks: [{command: ./x}]\n")
+	writeFile(t, filepath.Join(lib, "hooks", "aaa-late", "x"), "")
+	p := compute(t, cfg)
+	if _, err := Execute(cfg, p); err != nil {
+		t.Fatal(err)
+	}
+	raw, _ := os.ReadFile(filepath.Join(cfg.OutDir(), "hooks.codex.json"))
+	s := string(raw)
+	if !(strings.Index(s, `"PreToolUse"`) < strings.Index(s, `"PostToolUse"`) && strings.Index(s, `"PostToolUse"`) < strings.Index(s, `"Stop"`)) {
+		t.Errorf("events must follow the generic order:\n%s", s)
+	}
+	raw, _ = os.ReadFile(filepath.Join(cfg.OutDir(), "hooks.cursor.json"))
+	s = string(raw)
+	if !(strings.Index(s, `"preToolUse"`) < strings.Index(s, `"postToolUse"`) && strings.Index(s, `"postToolUse"`) < strings.Index(s, `"stop"`)) {
+		t.Errorf("cursor events must follow the generic order:\n%s", s)
+	}
+}
+
+func TestHookOrderFollowsSourcePriority(t *testing.T) {
+	cfg, _ := setupHooks(t, "error")
+	writeFile(t, cfg.Path, strings.Replace(strings.Replace(hooksYAML, "%s", "error", 1), "  - ../lib\n", "  - ../lib\n  - ./.flow\n", 1))
+	cfg2, err := config.Load(cfg.Path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, filepath.Join(cfg.BaseDir, ".flow", "hooks", "aaa-second", "hook.yaml"), "events:\n  PreToolUse:\n    - matcher: Edit\n      hooks: [{command: ./x}]\n")
+	writeFile(t, filepath.Join(cfg.BaseDir, ".flow", "hooks", "aaa-second", "x"), "")
+	p := compute(t, cfg2)
+	if _, err := Execute(cfg2, p); err != nil {
+		t.Fatal(err)
+	}
+	cl := readJSON(t, filepath.Join(cfg2.OutDir(), "hooks.claude.json"))
+	groups := cl["hooks"].(map[string]interface{})["PreToolUse"].([]interface{})
+	if len(groups) != 2 || groups[0].(map[string]interface{})["matcher"] != "Bash" || groups[1].(map[string]interface{})["matcher"] != "Edit" {
+		t.Errorf("groups must follow source priority (lib before .flow), got %v", groups)
+	}
+}
+
+func TestHookNothingReachesToolStillWritesEmptyEntry(t *testing.T) {
+	cfg, lib := setupHooks(t, "error")
+	writeFile(t, filepath.Join(lib, "hooks", "block-rm", "hook.yaml"), "events:\n  Interrupt:\n    - hooks: [{command: ./block-rm.sh}]\n")
+	p := compute(t, cfg)
+	var it Item
+	for _, x := range p.Items {
+		if x.Name == "block-rm" {
+			it = x
+		}
+	}
+	if it.HookOut["claude"] || !it.HookOut["codex"] || it.HookOut["antigravity"] || it.HookOut["cursor"] {
+		t.Errorf("Interrupt is codex-only, reach = %v", it.HookOut)
+	}
+	if _, err := Execute(cfg, p); err != nil {
+		t.Fatal(err)
+	}
+	cl := readJSON(t, filepath.Join(cfg.OutDir(), "hooks.claude.json"))
+	if len(cl["hooks"].(map[string]interface{})) != 0 {
+		t.Error("claude registry must be empty")
+	}
+	ag := readJSON(t, filepath.Join(cfg.OutDir(), "hooks.antigravity.json"))
+	if len(ag) != 0 {
+		t.Error("antigravity registry must have no entry for an unreachable hook")
+	}
+}
+
+func TestHookScriptPaths(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, filepath.Join(dir, "hook.yaml"), "events:\n  Stop:\n    - hooks: [{command: 'python3 ./a.py ./b.sh'}, {type: http, url: x}, {command: ./c.sh --v}, {command: ./c.sh}]\n")
+	got := HookScriptPaths(dir)
+	if strings.Join(got, ",") != "c.sh" {
+		t.Errorf("HookScriptPaths = %v", got)
+	}
+	writeFile(t, filepath.Join(dir, "hook.yaml"), "events: [\n")
+	if HookScriptPaths(dir) != nil {
+		t.Error("broken hook.yaml yields nothing")
+	}
+}
+
+func TestHookIgnoredEntriesAreReported(t *testing.T) {
+	cfg, lib := setupHooks(t, "error")
+	writeFile(t, filepath.Join(lib, "hooks", "stray.yaml"), "events: {}\n")
+	writeFile(t, filepath.Join(lib, "hooks", "no-decl", "run.sh"), "")
+	writeFile(t, filepath.Join(lib, "hooks", ".hidden", "hook.yaml"), "events: {}\n")
+	p := compute(t, cfg)
+	reasons := map[string]string{}
+	for _, ig := range p.Ignored {
+		if ig.Category == "hooks" {
+			reasons[ig.Name] = ig.Reason
+		}
+	}
+	if !strings.Contains(reasons["stray.yaml"], "single file") || !strings.Contains(reasons["no-decl"], "hook.yaml") {
+		t.Errorf("ignored reasons = %v", reasons)
+	}
+	if _, has := reasons[".hidden"]; has {
+		t.Error("hidden entries are skipped silently")
 	}
 }

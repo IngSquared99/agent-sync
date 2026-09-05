@@ -303,9 +303,10 @@ func ApplyMerge(cfg *config.Config, plans []MergePlan) ([]build.MergeRecord, err
 		incoming := toRaw(reg)
 		_, exists := os.Lstat(p.FilePath)
 		created := exists != nil || p.Created
-		if exists != nil && len(incoming) == 0 {
-			// No groups to merge and no file: the file is not created.
-			records = append(records, build.MergeRecord{Path: p.FilePath, Key: MergeKey, Hash: emptyHash})
+		if len(incoming) == 0 && (exists != nil || p.Owned == 0) {
+			// Nothing to merge and nothing of agsy's in the file: the file
+			// is neither created nor rewritten.
+			records = append(records, build.MergeRecord{Path: p.FilePath, Key: MergeKey, Hash: emptyHash, Created: p.Created})
 			continue
 		}
 		if err := writeMerged(p.FilePath, hooksAbs, incoming, reg.Order); err != nil {

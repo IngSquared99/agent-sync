@@ -7,7 +7,12 @@ import (
 	"testing"
 
 	"github.com/IngSquared99/agent-sync/internal/prompt"
+
+	"github.com/IngSquared99/agent-sync/i18n"
 )
+
+// Message assertions below compare the English source strings.
+func init() { i18n.SetLang("en") }
 
 // End-to-end flow for the hooks category: init → apply writes four registries,
 // three links and the settings.json merge → an edited agsy entry is reported
@@ -215,5 +220,149 @@ mount:
 	}
 	if _, err := os.Stat(filepath.Join(proj, ".claude", "settings.json")); err == nil {
 		t.Error("no merge configured → settings.json must not be created")
+	}
+}
+
+// captureStdout runs fn and returns what it printed.
+func captureStdout(t *testing.T, fn func()) string {
+	t.Helper()
+	old := os.Stdout
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	os.Stdout = w
+	done := make(chan string)
+	go func() {
+		buf := make([]byte, 0, 1<<16)
+		tmp := make([]byte, 4096)
+		for {
+			n, err := r.Read(tmp)
+			buf = append(buf, tmp[:n]...)
+			if err != nil {
+				break
+			}
+		}
+		done <- string(buf)
+	}()
+	fn()
+	w.Close()
+	os.Stdout = old
+	return <-done
+}
+
+func TestHooksPlanAndDoctorOutput(t *testing.T) {
+	proj := newHookProject(t)
+	chdir(t, proj)
+	// a second hook with a vendor gap and a non-executable script
+	write(t, filepath.Join(proj, "repo-ai-lib", "hooks", "greet", "hook.yaml"), "events:\n  SessionStart:\n    - hooks: [{command: ./greet.sh}]\n")
+	write(t, filepath.Join(proj, "repo-ai-lib", "hooks", "greet", "greet.sh"), "#!/bin/sh\n")
+	prompt.AssumeYes = true
+	defer func() { prompt.AssumeYes = false }()
+	if code := cmdInit([]string{"./repo-ai-lib"}); code != 0 {
+		t.Fatal("init failed")
+	}
+	out := captureStdout(t, func() {
+		if code := cmdPlan(); code != 0 {
+			t.Error("plan failed")
+		}
+	})
+	for _, want := range []string{
+		"hooks → .agsy/hooks/",
+		"block-rm",
+		"antigravity ✓  claude ✓  codex ✓  cursor ✓",
+		"antigravity —",
+		"greet: antigravity has no SessionStart",
+		"hooks.antigravity.json, hooks.claude.json, hooks.codex.json, hooks.cursor.json",
+		"settings.json ⇐ hooks.claude.json",
+		"merge into \"hooks\"; file will be created",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("plan output lacks %q:\n%s", want, out)
+		}
+	}
+	out = captureStdout(t, func() { cmdDoctor() })
+	for _, want := range []string{"hooks/", "2 directories", "greet/greet.sh is not executable", "settings.json", "absent, apply creates it"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("doctor output lacks %q:\n%s", want, out)
+		}
+	}
+	// a tool listed but not mounted for hooks → hint in plan and doctor
+	cfgRaw := read(t, filepath.Join(proj, "agsy.yaml"))
+	cfgRaw = strings.Replace(cfgRaw, "  - dir: .cursor        # Cursor\n    links:\n      hooks.json: hooks.cursor.json\n", "", 1)
+	if err := os.WriteFile(filepath.Join(proj, "agsy.yaml"), []byte(cfgRaw), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	out = captureStdout(t, func() { cmdPlan() })
+	if !strings.Contains(out, `build.tools lists "cursor", but nothing mounts hooks.cursor.json`) {
+		t.Errorf("plan must warn about the unmounted registry:\n%s", out)
+	}
+	out = captureStdout(t, func() { cmdDoctor() })
+	if !strings.Contains(out, `build.tools lists "cursor"`) {
+		t.Errorf("doctor must warn about the unmounted registry:\n%s", out)
+	}
+}
+
+func TestHooksCleanSkipsInvalidMergeTarget(t *testing.T) {
+	proj := newHookProject(t)
+	chdir(t, proj)
+	prompt.AssumeYes = true
+	defer func() { prompt.AssumeYes = false }()
+	if code := cmdInit([]string{"./repo-ai-lib"}); code != 0 {
+		t.Fatal("init failed")
+	}
+	if code := cmdApply(); code != 0 {
+		t.Fatal("apply failed")
+	}
+	settings := filepath.Join(proj, ".claude", "settings.json")
+	if err := os.WriteFile(settings, []byte("[]"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if code := cmdStatus(false); code != 1 {
+		t.Fatal("invalid settings.json must be a gap")
+	}
+	if code := cmdApply(); code == 0 {
+		t.Fatal("apply must refuse while settings.json is invalid")
+	}
+	out := captureStdout(t, func() {
+		if code := cmdClean(); code != 0 {
+			t.Error("clean must still succeed")
+		}
+	})
+	if !strings.Contains(out, "Skipped (symbolic link or not a JSON object)") {
+		t.Errorf("clean must report the skipped target:\n%s", out)
+	}
+	if raw := read(t, settings); raw != "[]" {
+		t.Error("invalid file must be left untouched")
+	}
+	if _, err := os.Lstat(filepath.Join(proj, ".codex", "hooks.json")); err == nil {
+		t.Error("links must still be removed")
+	}
+	if _, err := os.Stat(filepath.Join(proj, ".agsy")); err == nil {
+		t.Error("output must still be removed")
+	}
+}
+
+func TestHooksStatusRestoresDeletedRegistryLink(t *testing.T) {
+	proj := newHookProject(t)
+	chdir(t, proj)
+	prompt.AssumeYes = true
+	defer func() { prompt.AssumeYes = false }()
+	if code := cmdInit([]string{"./repo-ai-lib"}); code != 0 {
+		t.Fatal("init failed")
+	}
+	if code := cmdApply(); code != 0 {
+		t.Fatal("apply failed")
+	}
+	os.Remove(filepath.Join(proj, ".codex", "hooks.json"))
+	os.Remove(filepath.Join(proj, ".claude", "settings.json"))
+	if code := cmdStatus(false); code != 1 {
+		t.Fatal("missing registry link and merge target must be gaps")
+	}
+	if code := cmdApply(); code != 0 {
+		t.Fatal("apply failed")
+	}
+	if code := cmdStatus(false); code != 0 {
+		t.Fatal("apply must restore both")
 	}
 }

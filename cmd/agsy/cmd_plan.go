@@ -166,11 +166,44 @@ func cmdPlan() int {
 	if err != nil {
 		return errExit(err)
 	}
+	merges, err := mount.InspectMerge(cfg, nil)
+	if err != nil {
+		return errExit(err)
+	}
+	mergeBad := 0
+	// Merge entries print under their directory, after that directory's links.
+	printMerges := func(dir string) {
+		for _, mp := range merges {
+			if mp.Dir != dir {
+				continue
+			}
+			var note string
+			switch mp.State {
+			case mount.MergeMissing:
+				note = i18n.T("(merge into \"hooks\"; file will be created)")
+			case mount.MergeAbsent:
+				note = i18n.T("(merge into \"hooks\"; other keys untouched)")
+			case mount.MergeClean:
+				note = fmt.Sprintf(i18n.T("(merge into \"hooks\"; %d agsy entries present, will be refreshed)"), mp.Owned)
+			case mount.MergeModified:
+				note = i18n.T("⚠ agsy entries were modified — apply will ask before rebuilding them")
+			case mount.MergeInvalid:
+				note = "✘ " + mp.Note + i18n.T("; apply will fail, handle it manually")
+				mergeBad++
+			}
+			fmt.Printf("  %-10s ⇐ %-28s %s\n", mp.Name, filepath.Base(mp.Registry), note)
+		}
+	}
+	printed := map[string]bool{}
 	curDir := ""
 	realCnt, staleCnt := 0, 0
 	for _, l := range links {
 		if l.Dir != curDir {
+			if curDir != "" {
+				printMerges(curDir)
+			}
 			curDir = l.Dir
+			printed[curDir] = true
 			fmt.Printf("\n%s/\n", l.Dir)
 		}
 		var note string
@@ -188,31 +221,15 @@ func cmdPlan() int {
 		}
 		fmt.Printf("  %-10s → %-28s %s\n", l.Name, l.Target, note)
 	}
-	merges, err := mount.InspectMerge(cfg, nil)
-	if err != nil {
-		return errExit(err)
+	if curDir != "" {
+		printMerges(curDir)
 	}
-	mergeBad := 0
 	for _, mp := range merges {
-		if mp.Dir != curDir {
-			curDir = mp.Dir
+		if !printed[mp.Dir] {
+			printed[mp.Dir] = true
 			fmt.Printf("\n%s/\n", mp.Dir)
+			printMerges(mp.Dir)
 		}
-		var note string
-		switch mp.State {
-		case mount.MergeMissing:
-			note = i18n.T("(merge into \"hooks\"; file will be created)")
-		case mount.MergeAbsent:
-			note = i18n.T("(merge into \"hooks\"; other keys untouched)")
-		case mount.MergeClean:
-			note = fmt.Sprintf(i18n.T("(merge into \"hooks\"; %d agsy entries present, will be refreshed)"), mp.Owned)
-		case mount.MergeModified:
-			note = i18n.T("⚠ agsy entries were modified — apply will ask before rebuilding them")
-		case mount.MergeInvalid:
-			note = "✘ " + mp.Note + i18n.T("; apply will fail, handle it manually")
-			mergeBad++
-		}
-		fmt.Printf("  %-10s ⇐ %-28s %s\n", mp.Name, filepath.Base(mp.Registry), note)
 	}
 
 	fmt.Println(i18n.T("\n═══ summary ═══"))
