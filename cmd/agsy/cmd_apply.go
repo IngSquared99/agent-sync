@@ -71,6 +71,26 @@ func cmdApply() int {
 		fmt.Println(i18n.T("  (for a real AGENTS.md: move its content into a source rules/ directory, or rename the file to keep it)"))
 		return 1
 	}
+	// Pre-check: merge targets that cannot be written (a symlink, or not a
+	// JSON object). Same reasoning: detectable now, so fail before the
+	// rebuild rather than after it.
+	preMerges, err := mount.InspectMerge(cfg, nil)
+	if err != nil {
+		return errExit(err)
+	}
+	var badMerge []string
+	for _, mp := range preMerges {
+		if mp.State == mount.MergeInvalid {
+			badMerge = append(badMerge, mp.FilePath+"  ("+mp.Note+")")
+		}
+	}
+	if len(badMerge) > 0 {
+		fmt.Println(i18n.T("✘ the following merge targets cannot be updated (symbolic link or not a JSON object); fix them manually first:"))
+		for _, b := range badMerge {
+			fmt.Println("  -", b)
+		}
+		return 1
+	}
 
 	// Compute runs before the confirmation (read-only): fatal problems
 	// (target errors, name conflicts, collisions) must surface before the
@@ -80,7 +100,7 @@ func cmdApply() int {
 		return errExit(err)
 	}
 	if len(p.RouteErrors) > 0 {
-		fmt.Println(i18n.T("✘ workflow target problems (front matter); fix these files first:"))
+		fmt.Println(i18n.T("✘ workflow target or hook declaration problems; fix these files first:"))
 		for _, e := range p.RouteErrors {
 			fmt.Println("  -", e)
 		}
@@ -121,8 +141,19 @@ func cmdApply() int {
 		}
 		printSourceChanges(rep)
 		printForeignFrom(rep.ForeignFrom)
-		if len(rep.Artifacts) > 0 {
-			printArtifactChanges(cfg, rep, true)
+		modifiedMerges := 0
+		for _, mp := range rep.Merges {
+			if mp.State == mount.MergeModified {
+				modifiedMerges++
+			}
+		}
+		if len(rep.Artifacts) > 0 || modifiedMerges > 0 {
+			if len(rep.Artifacts) > 0 {
+				printArtifactChanges(cfg, rep, true)
+			}
+			if modifiedMerges > 0 {
+				printMergeChanges(rep, true)
+			}
 			if !prompt.Confirm(i18n.T("Discard these artifact-side changes and rebuild?")) {
 				fmt.Println(i18n.T("Cancelled."))
 				return 1
@@ -167,6 +198,29 @@ func cmdApply() int {
 		return 1
 	}
 	fmt.Printf(i18n.T("✔ mount done: %d links\n"), len(links))
+
+	// merge (Claude Code's settings.json): the registry's groups replace the
+	// agsy-owned groups; everything else in the file is preserved.
+	var oldMerges []build.MergeRecord
+	if mErr == nil && m != nil {
+		oldMerges = m.Merges
+	}
+	merges, err := mount.InspectMerge(cfg, oldMerges)
+	if err != nil {
+		return errExit(err)
+	}
+	if len(merges) > 0 {
+		recs, err := mount.ApplyMerge(cfg, merges)
+		if err != nil {
+			fmt.Println("✘", err)
+			fmt.Printf(i18n.T("(build finished, %s/ and links are intact; only the merge step is incomplete — fix the issue and rerun agsy apply)\n"), cfg.Build.Out)
+			return 1
+		}
+		newM.Merges = recs
+		for _, mp := range merges {
+			fmt.Printf(i18n.T("✔ merge done: %s ← %s\n"), filepath.Join(mp.Dir, mp.Name), filepath.Base(mp.Registry))
+		}
+	}
 
 	// Record the links this apply created (orphan detection needs them), then
 	// surface links a previous apply created that this config no longer
@@ -267,6 +321,21 @@ func printArtifactChanges(cfg *config.Config, rep *state.Report, forApply bool) 
 	}
 }
 
+// printMergeChanges lists merge targets whose agsy entries were edited on
+// the artifact side; the next apply rebuilds those groups.
+func printMergeChanges(rep *state.Report, forApply bool) {
+	for _, mp := range rep.Merges {
+		if mp.State != mount.MergeModified {
+			continue
+		}
+		if forApply {
+			fmt.Printf(i18n.T("  modified %s   agsy entries in the \"hooks\" key were edited; to keep them: move them into your own group or a personal-level settings file\n"), filepath.Join(mp.Dir, mp.Name))
+		} else {
+			fmt.Printf(i18n.T("  modified %s   agsy entries in the \"hooks\" key were edited (apply rebuilds them); to keep them: move them into your own group or a personal-level settings file\n"), filepath.Join(mp.Dir, mp.Name))
+		}
+	}
+}
+
 // printForeignFrom warns about manifest source paths outside the configured
 // sources. The manifest is untrusted, so these are never stat'ed or hashed;
 // they also legitimately appear after editing sources — either way the next
@@ -312,12 +381,14 @@ func adapterLinkCandidates(cfg *config.Config) []string {
 				add(filepath.Join(abs, config.AgentsMD))
 			}
 		}
-		abs, err := cfg.ExpandPath(a.Mount.Dir)
-		if err != nil {
-			continue
-		}
-		for name := range a.Mount.Links {
-			add(filepath.Join(abs, name))
+		for _, m := range a.Mounts {
+			abs, err := cfg.ExpandPath(m.Dir)
+			if err != nil {
+				continue
+			}
+			for name := range m.Links {
+				add(filepath.Join(abs, name))
+			}
 		}
 	}
 	sort.Strings(out)

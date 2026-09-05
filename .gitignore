@@ -10,6 +10,8 @@ dist/
 .agsy.lock
 .claude/
 .agents/
+.codex/
+.cursor/
 /AGENTS.md
 
 # macOS

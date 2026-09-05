@@ -51,7 +51,7 @@ sources:
   - ./.flow
 build:
   out: .agsy
-  on_conflict: {rules: %s, skills: %s, workflows: rename}
+  on_conflict: {rules: %s, skills: %s, workflows: rename, hooks: error}
   tools: [claude, codex, antigravity, cursor]
 mount:
   - dir: .

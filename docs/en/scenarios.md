@@ -72,6 +72,19 @@ The mount links themselves can misbehave — a problem of the "channel", not of 
 | mount point occupied by a **real** directory or file | ✘ occupied | the tool directory already had a same-named folder, or a real `AGENTS.md` exists at the root | ✘ apply **refuses** and **never deletes it** — move the content into a source (usually what you want) or remove it yourself, then apply |
 | orphan link | ⚠ no longer referenced by the config | an earlier apply created it, then the tool was removed from mount | apply reports only; delete manually or let `agsy clean` remove it |
 
+## Merge scenarios (Claude Code's settings.json)
+
+`.claude/settings.json` is your file; agsy owns only the entries under `hooks` whose command points into `.agsy/hooks/`:
+
+| Scenario | status shows | Handling |
+|----------|-------------|----------|
+| you edited an entry agsy wrote (say matcher Bash → Edit) | list B: agsy entries were edited | apply asks, then rebuilds the whole group. To keep it: move it into a group of your own (command not under `.agsy/`) or into `settings.local.json` |
+| you added your own handler inside agsy's group | same (the group counts as edited) | same — agsy's groups only ever hold agsy's handlers |
+| you added your own group, changed permissions, model, other keys | not an anomaly | apply and clean preserve them verbatim |
+| agsy's entries were deleted, or the whole file | ✘ entries are missing | `agsy apply` restores them |
+| the file is not a JSON object (broken, an array) or is a symlink | ✘ apply refuses until fixed | fix by hand; clean skips it and says so |
+| the sources hold no hooks at all | in sync ✔ | an absent file is not created; an existing one does not gain an empty `hooks` key |
+
 ## Conditions that stop apply before the build starts
 
 These checks deliberately run **before** the discard confirmation:
@@ -80,7 +93,9 @@ These checks deliberately run **before** the discard confirmation:
 |-----------|--------------|-----|
 | any source path missing | refuses to rebuild from an incomplete list | fix the path (clone / mount / typo) |
 | mount point occupied by a real path | refuses and lists; never deletes | move or delete it yourself |
-| workflow target errors (unknown tool name) | lists the files to fix | fix the front matter or extend `build.tools` |
+| workflow target errors (unknown tool name), `hook.yaml` errors (parse failure, unknown event, missing command, referenced script absent) | lists the files to fix | fix the front matter / `hook.yaml`, or extend `build.tools` |
+| a merge target is a symlink or not a JSON object | refuses and lists it | fix `.claude/settings.json` by hand |
+| a mount point occupied by a real `hooks.json` | refuses and lists it; never deletes | rewrite its content as a hook in a source, then remove the file |
 | name conflicts (`on_conflict: error`) | lists the conflict groups | rename or delete one copy |
 | final output-path collisions (cross-category included) | lists the collision groups | rename one of them |
 | manifest corrupt but `.agsy/` exists | contents unknowable | ⚠ extra confirmation before rebuilding |

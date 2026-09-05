@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/IngSquared99/agent-sync/i18n"
@@ -84,10 +85,24 @@ func cmdStatus(withMenu bool) int {
 	}
 
 	fmt.Printf(i18n.T("\n═══ list B: changes on the artifact side (apply will discard these) ═══\n"))
-	if len(rep.Artifacts) == 0 {
+	modifiedMerges := 0
+	for _, mp := range rep.Merges {
+		if mp.State == mount.MergeModified {
+			modifiedMerges++
+		}
+	}
+	if len(rep.Artifacts) == 0 && modifiedMerges == 0 {
 		fmt.Println(i18n.T("\n(no artifact-side changes)"))
 	} else {
-		printArtifactChanges(cfg, rep, false)
+		if len(rep.Artifacts) > 0 {
+			printArtifactChanges(cfg, rep, false)
+		}
+		if modifiedMerges > 0 {
+			if len(rep.Artifacts) == 0 {
+				fmt.Println()
+			}
+			printMergeChanges(rep, false)
+		}
 		fmt.Println(i18n.T("  There is no write-back: to keep a change, move or merge it into a source, then agsy apply."))
 	}
 
@@ -120,13 +135,26 @@ func cmdStatus(withMenu bool) int {
 	for _, o := range rep.Orphans {
 		fmt.Printf(i18n.T("%s → ⚠ created by an earlier apply but no longer referenced by the mount config; delete it manually or run agsy clean\n"), o)
 	}
+	for _, mp := range rep.Merges {
+		target := mp.Dir + "/   " + mp.Name
+		switch mp.State {
+		case mount.MergeClean:
+			fmt.Printf(i18n.T("%s ⇐ %s   merged, %d agsy entries in sync ✔\n"), target, filepath.Base(mp.Registry), mp.Owned)
+		case mount.MergeModified:
+			fmt.Printf(i18n.T("%s ⇐ %s   ⚠ agsy entries in the \"hooks\" key were modified (listed above; apply rebuilds them)\n"), target, filepath.Base(mp.Registry))
+		case mount.MergeMissing, mount.MergeAbsent:
+			fmt.Printf(i18n.T("%s ⇐ %s   ✘ agsy entries in the \"hooks\" key are missing (apply restores them)\n"), target, filepath.Base(mp.Registry))
+		case mount.MergeInvalid:
+			fmt.Printf(i18n.T("%s ⇐ %s   ✘ %s; apply will refuse until it is fixed\n"), target, filepath.Base(mp.Registry), mp.Note)
+		}
+	}
 
 	fmt.Println(i18n.T("\n═══ summary ═══"))
 	fmt.Printf(i18n.T("source changes %d │ artifact-side changes %d │ missing outputs %d │ mount anomalies %d\n"),
-		len(rep.SourceChanges)+len(rep.News), len(rep.Artifacts), len(rep.Gone), rep.LinkBad)
-	if len(rep.Artifacts) > 0 {
+		len(rep.SourceChanges)+len(rep.News), len(rep.Artifacts)+modifiedMerges, len(rep.Gone), rep.LinkBad+rep.MergeBad)
+	if len(rep.Artifacts) > 0 || modifiedMerges > 0 {
 		fmt.Println(i18n.T("suggestion: move anything worth keeping into a source first, then run agsy apply"))
-	} else if len(rep.SourceChanges) > 0 || len(rep.News) > 0 || len(rep.Gone) > 0 || rep.LinkBad > len(rep.Orphans) {
+	} else if len(rep.SourceChanges) > 0 || len(rep.News) > 0 || len(rep.Gone) > 0 || rep.LinkBad > len(rep.Orphans) || rep.MergeBad > 0 {
 		fmt.Println(i18n.T("suggestion: run agsy apply to rebuild"))
 	}
 	if len(rep.Orphans) > 0 {

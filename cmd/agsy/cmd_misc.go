@@ -34,8 +34,25 @@ func cmdClean() int {
 	// Load the manifest before the output is removed: its mount record is the
 	// only trace of links whose mount entry was later edited away (orphans).
 	var recorded []string
+	var mergeRecs []build.MergeRecord
 	if m, err := build.LoadManifest(cfg.OutDir()); err == nil {
 		recorded = m.Mounts
+		mergeRecs = m.Merges
+	}
+	// Merge targets first: they are the user's files, so only agsy's own
+	// entries are stripped; a file agsy created and left empty is deleted.
+	cleaned, deletedFiles, skippedMerge, err := mount.RemoveMerge(cfg, mergeRecs)
+	if err != nil {
+		return errExit(err)
+	}
+	for _, c := range cleaned {
+		fmt.Println(i18n.T("✔ Removed agsy hooks from"), c)
+	}
+	for _, d := range deletedFiles {
+		fmt.Println(i18n.T("✔ Removed (created by agsy)"), d)
+	}
+	for _, sk := range skippedMerge {
+		fmt.Println(i18n.T("⚠ Skipped (symbolic link or not a JSON object)"), sk)
 	}
 	removed, skipped, err := mount.RemoveLinks(cfg)
 	if err != nil {
@@ -97,6 +114,7 @@ func cmdDoctor() int {
 	fmt.Printf(i18n.T("Checking %s ............ ✔ format OK\n"), config.FileName)
 
 	errs, warns := 0, 0
+	hooksSeen := false
 	sources, _ := build.ExpandSources(cfg)
 	fmt.Println(i18n.T("Checking source paths"))
 	for _, s := range sources {
@@ -138,13 +156,29 @@ func cmdDoctor() int {
 				}
 			}
 			unit := i18n.T("files")
-			if cat == "skills" {
+			if cat == "skills" || cat == "hooks" {
 				unit = i18n.T("directories")
 			}
 			fmt.Printf("  %-28s ✔ %d %s\n", cc.From+"/", n, unit)
 			for _, ig := range ignored {
 				fmt.Printf(i18n.T("  %-28s ⚠ skipped %s\n"), "", ig)
 				warns++
+			}
+			if cat == "hooks" {
+				hooksSeen = true
+				for _, e := range entries {
+					if !e.IsDir() {
+						continue
+					}
+					for _, rel := range build.HookScriptPaths(filepath.Join(dir, e.Name())) {
+						if runtime.GOOS != "windows" {
+							if fi, err := os.Stat(filepath.Join(dir, e.Name(), rel)); err == nil && fi.Mode().Perm()&0o111 == 0 {
+								fmt.Printf(i18n.T("  %-28s ⚠ %s/%s is not executable (chmod +x, unless the command names an interpreter)\n"), "", e.Name(), rel)
+								warns++
+							}
+						}
+					}
+				}
 			}
 		}
 	}
@@ -166,6 +200,30 @@ func cmdDoctor() int {
 		case mount.IsReal:
 			fmt.Printf(i18n.T("  %-28s ⚠ a real directory or file exists; apply will fail, handle it manually\n"), p)
 			warns++
+		}
+	}
+	merges, err := mount.InspectMerge(cfg, nil)
+	if err != nil {
+		return errExit(err)
+	}
+	for _, mp := range merges {
+		p := filepath.Join(mp.Dir, mp.Name)
+		switch mp.State {
+		case mount.MergeMissing:
+			fmt.Printf(i18n.T("  %-28s ✔ absent, apply creates it with the hook entries\n"), p)
+		case mount.MergeAbsent, mount.MergeClean, mount.MergeModified:
+			fmt.Printf(i18n.T("  %-28s ✔ JSON object, hook entries are merged into its \"hooks\" key\n"), p)
+		case mount.MergeInvalid:
+			fmt.Printf(i18n.T("  %-28s ⚠ %s; apply will fail, handle it manually\n"), p, mp.Note)
+			warns++
+		}
+	}
+	if hooksSeen {
+		for _, tool := range cfg.Build.Tools {
+			if build.HasHookDialect(tool) && !cfg.HookRegistryMounted(tool) {
+				fmt.Printf(i18n.T("  %-28s ⚠ build.tools lists %q, but nothing mounts %s; hooks will not reach that tool\n"), "", tool, config.HookRegistryFiles[tool])
+				warns++
+			}
 		}
 	}
 	// Link capability is verified by creating and removing a real link

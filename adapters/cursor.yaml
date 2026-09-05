@@ -1,10 +1,14 @@
 # Cursor mount preset
-# Cursor reads rules from the root AGENTS.md and skills (including converted
-# workflows) natively from .agents/skills/, so it shares the .agents mount.
+# Cursor reads rules from the root AGENTS.md, skills (including converted
+# workflows) natively from .agents/skills/, so it shares the .agents mount;
+# hooks come from .cursor/hooks.json.
 name: cursor
 display: Cursor
 needs_agents_md: true
-mount:
-  dir: .agents
-  links:
-    skills: skills
+mounts:
+  - dir: .agents
+    links:
+      skills: skills
+  - dir: .cursor
+    links:
+      hooks.json: hooks.cursor.json

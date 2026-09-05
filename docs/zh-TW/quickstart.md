@@ -4,7 +4,7 @@
 
 ## 第 0 步：準備一個來源庫
 
-來源是一個至多含三個子目錄的資料夾，任何子集皆可：
+來源是一個至多含四個子目錄的資料夾，任何子集皆可：
 
 ```
 ~/all-ai-lib/
@@ -13,8 +13,12 @@
 ├── skills/
 │   └── code-review/
 │       └── SKILL.md             # 內含 SKILL.md 的目錄
-└── workflows/
-    └── deploy.md                # 單純的 markdown 檔，可選 target: front matter
+├── workflows/
+│   └── deploy.md                # 單純的 markdown 檔，可選 target: front matter
+└── hooks/
+    └── block-rm/
+        ├── hook.yaml            # 宣告：哪個事件、哪個工具、跑哪支腳本
+        └── block-rm.sh          # 腳本（exit 2 = 擋下）
 ```
 
 可以指向一個庫或多個；常見配置是個人共用庫（`~/all-ai-lib`）加專案內的庫（`./repo-ai-lib`）。
@@ -32,15 +36,16 @@ $ agsy init
   來源 3: ⏎
 
 要服務哪些工具?（空白分隔多個編號,a = 全部,Enter = 全部）
-    1) Claude Code (.claude/)
-    2) OpenAI Codex (.agents/)
-    3) Antigravity (.agents/)
-    4) Cursor (.agents/)
+    1) Antigravity (.agents/)
+    2) Claude Code (.claude/)
+    3) OpenAI Codex (.agents/, .codex/)
+    4) Cursor (.agents/, .cursor/)
 請輸入: a
 
 rules 的同名衝突怎麼處理?（建議 rename…）        ❯ rename
 skills 的同名衝突怎麼處理?（建議 error…）         ❯ error
 workflows 的同名衝突怎麼處理?                     ❯ rename
+hooks 的同名衝突怎麼處理?（建議 error…）          ❯ error
 
 建置產物目錄（預設: .agsy）: ⏎
 
@@ -48,7 +53,7 @@ workflows 的同名衝突怎麼處理?                     ❯ rename
 
 以下由 agsy 產生的路徑皆可重建,通常應加入 .gitignore:
 要把哪些項目加進 .gitignore?（a = 全部）a
-  ✔ 已將 7 個項目加入 .gitignore
+  ✔ 已將 10 個項目加入 .gitignore
   下一步:agsy plan 預覽 → agsy apply 執行
 ```
 
@@ -68,8 +73,9 @@ $ agsy plan
 
 ```
 $ agsy apply
-✔ build 完成:12 個項目 → .agsy/
-✔ mount 完成:5 條連結
+✔ build 完成:13 個項目 → .agsy/
+✔ mount 完成:8 條連結
+✔ merge 完成:.claude/settings.json ← hooks.claude.json
 ```
 
 完成後的專案結構：
@@ -79,14 +85,20 @@ your-project/
 ├── AGENTS.md          → .agsy/AGENTS.md         （全部 rules 串接）
 ├── .claude/
 │   ├── rules          → .agsy/rules
-│   └── skills         → .agsy/skills
+│   ├── skills         → .agsy/skills
+│   └── settings.json  ⇐ .agsy/hooks.claude.json （merge：只寫進 "hooks" 鍵）
 ├── .agents/
 │   ├── skills         → .agsy/skills
-│   └── workflows      → .agsy/workflows
+│   ├── workflows      → .agsy/workflows
+│   └── hooks.json     → .agsy/hooks.antigravity.json
+├── .codex/
+│   └── hooks.json     → .agsy/hooks.codex.json
+├── .cursor/
+│   └── hooks.json     → .agsy/hooks.cursor.json
 └── .agsy/             建置產物
 ```
 
-每個工具都從自己的原生位置讀到同一批內容。在 Claude Code 或 Cursor 輸入 `/deploy` 會執行該 workflow 的 skill 形態；在 Antigravity 則執行轉接頭，由它載入該 skill。
+每個工具都從自己的原生位置讀到同一批內容。在 Claude Code 或 Cursor 輸入 `/deploy` 會執行該 workflow 的 skill 形態；在 Antigravity 則執行轉接頭，由它載入該 skill。四家在執行 shell 指令前都會先跑 `block-rm.sh`——它回 exit 2 的話，指令就不會執行。
 
 ## 第 4 步：日常循環
 

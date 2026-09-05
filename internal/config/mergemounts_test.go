@@ -19,7 +19,7 @@ sources:
   - ./src
 build:
   out: .agsy
-  on_conflict: {rules: rename, skills: error, workflows: rename}
+  on_conflict: {rules: rename, skills: error, workflows: rename, hooks: error}
   tools: [claude, codex]
 mount:
   - dir: .claude
@@ -38,7 +38,7 @@ sources:
   - ./src
 build:
   out: .agsy
-  on_conflict: {rules: rename, skills: error, workflows: rename}
+  on_conflict: {rules: rename, skills: error, workflows: rename, hooks: error}
   tools: [claude, codex]
 mount:
   - dir: .claude
