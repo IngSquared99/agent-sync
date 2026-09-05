@@ -48,7 +48,7 @@ func cmdStatus(withMenu bool) int {
 		fmt.Printf(i18n.T("\n⚠ source scan failed (%v); new-item detection did not run this time\n"), rep.ScanErr)
 	}
 	if len(rep.RouteErrors) > 0 {
-		fmt.Printf(i18n.T("\n⚠ %d workflow target problems (apply will refuse to build; agsy plan lists them):\n"), len(rep.RouteErrors))
+		fmt.Printf(i18n.T("\n⚠ %d workflow target or hook declaration problems (apply will refuse to build; agsy plan lists them):\n"), len(rep.RouteErrors))
 		for _, e := range rep.RouteErrors {
 			fmt.Println("  -", e)
 		}
@@ -140,6 +140,8 @@ func cmdStatus(withMenu bool) int {
 		switch mp.State {
 		case mount.MergeClean:
 			fmt.Printf(i18n.T("%s ⇐ %s   merged, %d agsy entries in sync ✔\n"), target, filepath.Base(mp.Registry), mp.Owned)
+		case mount.MergeIdle:
+			fmt.Printf(i18n.T("%s ⇐ %s   no hook entries to merge, file untouched ✔\n"), target, filepath.Base(mp.Registry))
 		case mount.MergeModified:
 			fmt.Printf(i18n.T("%s ⇐ %s   ⚠ agsy entries in the \"hooks\" key were modified (listed above; apply rebuilds them)\n"), target, filepath.Base(mp.Registry))
 		case mount.MergeMissing, mount.MergeAbsent:
@@ -149,17 +151,24 @@ func cmdStatus(withMenu bool) int {
 		}
 	}
 
+	for _, o := range rep.MergeOrphans {
+		fmt.Printf(i18n.T("%s → ⚠ merged by an earlier apply but no longer named by the mount config; it still holds agsy hook entries — remove them by hand or run agsy clean\n"), o)
+	}
+
 	fmt.Println(i18n.T("\n═══ summary ═══"))
 	fmt.Printf(i18n.T("source changes %d │ artifact-side changes %d │ missing outputs %d │ mount anomalies %d\n"),
 		len(rep.SourceChanges)+len(rep.News), len(rep.Artifacts)+modifiedMerges, len(rep.Gone), rep.LinkBad+rep.MergeBad)
 	if len(rep.Artifacts) > 0 || modifiedMerges > 0 {
 		fmt.Println(i18n.T("suggestion: move anything worth keeping into a source first, then run agsy apply"))
-	} else if len(rep.SourceChanges) > 0 || len(rep.News) > 0 || len(rep.Gone) > 0 || rep.LinkBad > len(rep.Orphans) || rep.MergeBad > 0 {
+	} else if len(rep.SourceChanges) > 0 || len(rep.News) > 0 || len(rep.Gone) > 0 || rep.LinkBad > len(rep.Orphans) || rep.MergeBad > len(rep.MergeOrphans) {
 		fmt.Println(i18n.T("suggestion: run agsy apply to rebuild"))
 	}
 	if len(rep.Orphans) > 0 {
 		// apply never removes links, so "rebuild" is not the remedy here.
 		fmt.Println(i18n.T("suggestion: orphaned links are not removed by apply — delete them manually or run agsy clean"))
+	}
+	if len(rep.MergeOrphans) > 0 {
+		fmt.Println(i18n.T("suggestion: orphaned hook entries are not removed by apply — remove them by hand or run agsy clean"))
 	}
 
 	code := 0

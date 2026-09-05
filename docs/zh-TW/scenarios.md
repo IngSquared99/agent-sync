@@ -83,7 +83,9 @@ agsy apply     # 從此它是被追蹤的正式項目
 | 你自己加了群組、改了 permissions、model 等其他鍵 | 不算異常 | apply 與 clean 都原樣保留 |
 | agsy 的條目被刪、或整個檔案被刪 | ✘ 條目不見了 | `agsy apply` 復原 |
 | 檔案不是 JSON 物件（壞掉、是陣列）或是 symlink | ✘ 修正前 apply 拒絕 | 手動修好；clean 會跳過它並回報 |
-| 來源裡沒有任何 hook | 同步 ✔ | 檔案不存在就不建立；已存在也不會被加上空的 `hooks` 鍵 |
+| 來源裡沒有任何 hook | 沒有東西可 merge ✔ | 檔案不存在就不建立；已存在也不會被改寫——apply 與 clean 都不會 |
+| 你把 `merge` 條目從 `agsy.yaml` 移除 | ⚠ 孤兒：仍留有 agsy 條目 | apply 不碰它（並持續回報）；手動移除條目，或交給 `agsy clean` 清掉 |
+| 你搬移了專案或改名 `build.out` | `agsy apply` 之後同步 ✔ | 舊群組靠 `agsy:` 標記被認出並取代，絕不會重複 |
 
 ## 讓 apply 在建置前就停下的條件
 
@@ -114,7 +116,7 @@ agsy apply     # 從此它是被追蹤的正式項目
 
  掛載異常?
    ├─ 被實體路徑佔用 ──▶ 搬走它 ──▶ agsy apply
-   ├─ 孤兒連結 ──▶ 手動刪或 agsy clean
+   ├─ 孤兒連結／孤兒 hook 條目 ──▶ 手動刪或 agsy clean
    └─ 其他（遺失／指錯／已斷）──▶ agsy apply
 
  來源路徑不存在? ──▶ 先修路徑（clone／掛磁碟／改錯字）；修好前什麼都別跑

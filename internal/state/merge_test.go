@@ -47,7 +47,7 @@ func setupMerge(t *testing.T) (*config.Config, *build.Manifest, string) {
 		t.Fatal(err)
 	}
 	mp, _ := mount.InspectMerge(cfg, nil)
-	recs, err := mount.ApplyMerge(cfg, mp)
+	recs, err := mount.ApplyMerge(cfg, mp, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
