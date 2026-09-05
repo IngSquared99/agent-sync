@@ -130,4 +130,38 @@ Links created by an earlier apply whose tool you later removed from the mount co
 
 No. Scanning never collects symbolic links (including inside skill directories — a skill containing a link is skipped entirely), and the copy phase refuses links as a second line of defense. The output is mounted for every tool to read; a link must never smuggle in files from outside a source.
 
+## Hooks
+
+### Q25: What is a hook, exactly? A webhook?
+
+No. After you send a prompt, an AI coding tool runs a loop: the model thinks → runs a tool → the result goes back to the model → … A hook is a checkpoint at a fixed position in that loop (say "before a tool runs", `PreToolUse`, or "about to stop", `Stop`): the agent pauses there, runs your script locally, feeds it the situation as JSON on stdin, and an exit code 2 blocks the action while 0 lets it through. Everything happens on your machine, no network involved. A webhook is "a service sends an HTTP request to your URL when something happens" — the two only share the word.
+
+### Q26: My rules already say "never rm -rf"; why a hook?
+
+A rule is text the model reads; compliance is probabilistic — a long context or a conflicting goal can push it aside. A hook is a program: blocked means blocked, the model gets no vote. Anything expressible as an `if` belongs in a hook; style and preference, which no program can judge, stay in rules.
+
+### Q27: Why does Claude Code use merge while the other three use links?
+
+Codex, Antigravity and Cursor each have a dedicated `hooks.json`, so handing the whole file to agsy through a link is the clean option. Claude Code's hooks can only live in the `hooks` key of `.claude/settings.json`, next to your permissions, model and other settings — a link would swallow them — so agsy merges only its own entries into that file. Recognition works like links: an entry whose command points into `.agsy/hooks/` is agsy's, no marker needed.
+
+### Q28: Where do my own hooks go?
+
+The project-level registry belongs to agsy; personal hooks go to each vendor's personal layer, and all four stack layers rather than replacing them: Claude Code `.claude/settings.local.json` or `~/.claude/settings.json`; Codex `~/.codex/hooks.json` or `config.toml`; Cursor `~/.cursor/hooks.json`; Antigravity `~/.gemini/config/` (merge behaviour undocumented — test it).
+
+### Q29: Can one script serve all four tools?
+
+The registry can (agsy translates event names, structure and paths); the script has to handle the differences itself: the JSON each vendor feeds it differs (Claude / Codex use `tool_input.command`, Cursor and Antigravity have their own), and the "shell tool" name in matchers differs (Bash / Bash / run_command / Shell — set it with `overrides`). Branch on `hook_event_name` or the vendor's fields first.
+
+### Q30: My hook does nothing in one tool?
+
+`agsy plan` prints `claude ✓  codex ✓  antigravity —  cursor ✓` under every hook with the reason: the vendor documents no such hook point (Antigravity has five events and no `SessionStart`), the handler type is unsupported (Codex has no `http`), or `target:` left the tool out. Also, Claude Code and Codex both require project-level hooks to be trusted first (the workspace trust dialog) — accept it when the tool first starts.
+
+### Q31: The script does not run on Windows?
+
+agsy guarantees a correct registry (paths escaped), but a `.sh` cannot run on Windows directly. Name an interpreter in `hook.yaml` (`command: python3 ./check.py`) or use the vendor's own field through `overrides`, e.g. `overrides.codex.hooks[0].commandWindows`.
+
+### Q32: After upgrading from v0.1, apply says `build.on_conflict.hooks is not set`?
+
+v0.2.0 adds the hooks category, and its conflict strategy is mandatory like the others. Add one line, `hooks: error`, under `on_conflict` in `agsy.yaml`; mounting no registry at all is fine. To enable hooks for all four tools, rerun `agsy init` so the adapters add `.codex`, `.cursor`, `.agents/hooks.json` and the `.claude` `merge`, or add them by hand per [Configuration](config.md).
+
 → Back to: [Core Concepts](overview.md)

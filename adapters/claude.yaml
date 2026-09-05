@@ -1,10 +1,15 @@
 # Claude Code mount preset
 # Claude reads rules from .claude/rules/ (it does not read AGENTS.md) and
 # skills — including workflows converted to skills — from .claude/skills/.
+# Its hooks live in .claude/settings.json next to user settings, with no
+# separate file, so the hook registry is merged into that file's "hooks" key
+# rather than linked.
 name: claude
 display: Claude Code
-mount:
-  dir: .claude
-  links:
-    rules: rules
-    skills: skills
+mounts:
+  - dir: .claude
+    links:
+      rules: rules
+      skills: skills
+    merge:
+      settings.json: hooks.claude.json

@@ -13,13 +13,13 @@ import (
 )
 
 // CategoryOrder is the fixed processing order of categories (used for both scanning and output)
-var CategoryOrder = []string{"rules", "skills", "workflows"}
+var CategoryOrder = []string{"rules", "skills", "workflows", "hooks"}
 
 // ValidStrategies are the legal name-conflict strategies
 var ValidStrategies = map[string]bool{"first": true, "rename": true, "error": true}
 
 // SchemaVersion is the highest config-file version currently supported
-const SchemaVersion = 1
+const SchemaVersion = 2
 
 // AgentsMD is the derived single-file rules artifact: every rule concatenated
 // into one AGENTS.md, read natively by Codex, Cursor and Antigravity. It lives
@@ -32,6 +32,47 @@ const AgentsMD = "AGENTS.md"
 // It lives here (not in build) so validation can cross-check build.tools
 // against the mount configuration.
 const StubTool = "antigravity"
+
+// HookTools lists the tools agsy can produce a hook registry for, in the
+// order their registries are written. Adding a dialect in build/hooks.go
+// also means adding the tool here so config knows the registry file name.
+var HookTools = []string{"claude", "codex", "antigravity", "cursor"}
+
+// HookRegistryFiles maps a tool name to its derived hook registry file at the
+// top of the output directory. Like AGENTS.md these are reserved names: no
+// category may claim one as its "to", while mount links (and merge entries)
+// may point at them.
+var HookRegistryFiles = map[string]string{
+	"claude":      "hooks.claude.json",
+	"codex":       "hooks.codex.json",
+	"antigravity": "hooks.antigravity.json",
+	"cursor":      "hooks.cursor.json",
+}
+
+// IsRegistryFile reports whether name is one of the hook registry files.
+func IsRegistryFile(name string) bool {
+	return RegistryTool(name) != ""
+}
+
+// RegistryTool returns the tool a registry file name belongs to ("" if none).
+func RegistryTool(name string) string {
+	for t, f := range HookRegistryFiles {
+		if f == name {
+			return t
+		}
+	}
+	return ""
+}
+
+// ReservedTopNames are the top-level output names a category's "to" may
+// never use: they are produced by build as derived files.
+func ReservedTopNames() []string {
+	out := []string{AgentsMD}
+	for _, t := range HookTools {
+		out = append(out, HookRegistryFiles[t])
+	}
+	return out
+}
 
 type Category struct {
 	From string `yaml:"from"`
@@ -51,6 +92,12 @@ type BuildCfg struct {
 type MountCfg struct {
 	Dir   string            `yaml:"dir"`
 	Links map[string]string `yaml:"links"`
+	// Merge maps a file name inside dir to a hook registry file in the
+	// output. Instead of linking, apply merges the registry's hook entries
+	// into the "hooks" key of that JSON file, leaving every other key and
+	// every foreign entry untouched. Claude Code needs this: its hooks live
+	// in .claude/settings.json next to user settings, with no separate file.
+	Merge map[string]string `yaml:"merge"`
 	// OutsideProject is the explicit opt-in required for a mount dir that
 	// resolves outside the project directory. Without it such a mount is
 	// rejected: an agsy.yaml inside a cloned (possibly untrusted) repository
@@ -139,6 +186,7 @@ func (c *Config) applyDefaults() {
 		"rules":     {From: "rules", To: "rules"},
 		"skills":    {From: "skills", To: "skills"},
 		"workflows": {From: "workflows", To: "workflows"},
+		"hooks":     {From: "hooks", To: "hooks"},
 	}
 	for k, v := range def {
 		cur, ok := c.Build.Categories[k]
@@ -183,7 +231,7 @@ func (c *Config) mergeMounts(in []MountCfg) []MountCfg {
 		// and its links silently re-anchored there. It is kept as its own
 		// entry so validate sees the missing dir and rejects it.
 		if m.Dir == "" {
-			cp := MountCfg{Links: map[string]string{}, OutsideProject: m.OutsideProject}
+			cp := MountCfg{Links: map[string]string{}, Merge: copyMap(m.Merge), OutsideProject: m.OutsideProject}
 			for k, v := range m.Links {
 				cp.Links[k] = v
 			}
@@ -197,7 +245,7 @@ func (c *Config) mergeMounts(in []MountCfg) []MountCfg {
 		i, seen := idx[key]
 		if !seen {
 			idx[key] = len(out)
-			cp := MountCfg{Dir: m.Dir, Links: map[string]string{}, OutsideProject: m.OutsideProject}
+			cp := MountCfg{Dir: m.Dir, Links: map[string]string{}, Merge: copyMap(m.Merge), OutsideProject: m.OutsideProject}
 			for k, v := range m.Links {
 				cp.Links[k] = v
 			}
@@ -213,8 +261,29 @@ func (c *Config) mergeMounts(in []MountCfg) []MountCfg {
 			}
 			out[i].Links[k] = v
 		}
+		for k, v := range m.Merge {
+			if out[i].Merge == nil {
+				out[i].Merge = map[string]string{}
+			}
+			if prev, ok := out[i].Merge[k]; ok && prev != v {
+				out[i].Merge[k+dupMark] = v
+				continue
+			}
+			out[i].Merge[k] = v
+		}
 	}
 	return out
+}
+
+func copyMap(m map[string]string) map[string]string {
+	if m == nil {
+		return nil
+	}
+	cp := make(map[string]string, len(m))
+	for k, v := range m {
+		cp[k] = v
+	}
+	return cp
 }
 
 func (c *Config) validate() error {
@@ -257,6 +326,11 @@ func (c *Config) validate() error {
 	for _, cat := range CategoryOrder {
 		s, ok := c.Build.OnConflict[cat]
 		if !ok || s == "" {
+			if cat == "hooks" {
+				// The message names the upgrade step; no default is assumed.
+				errs = append(errs, i18n.T("build.on_conflict.hooks is not set (new in v0.2.0); choose first / rename / error, or rerun agsy init"))
+				continue
+			}
 			errs = append(errs, fmt.Sprintf(i18n.T("build.on_conflict.%s is not set, please explicitly choose first / rename / error"), cat))
 			continue
 		}
@@ -285,6 +359,10 @@ func (c *Config) validate() error {
 			errs = append(errs, fmt.Sprintf(i18n.T("build.categories.%s.to must not be %q; that name is reserved for the derived rules file"), cat, AgentsMD))
 			continue
 		}
+		if IsRegistryFile(cc.To) {
+			errs = append(errs, fmt.Sprintf(i18n.T("build.categories.%s.to must not be %q; that name is reserved for a derived hook registry file"), cat, cc.To))
+			continue
+		}
 		if prev, ok := seenTo[cc.To]; ok {
 			errs = append(errs, fmt.Sprintf(i18n.T("build.categories.%s.to and %s are both %q; different categories must output to different subdirectories"), cat, prev, cc.To))
 			continue
@@ -297,6 +375,7 @@ func (c *Config) validate() error {
 	}
 	errs = append(errs, c.validateMount()...)
 	errs = append(errs, c.validateWorkflowsMount()...)
+	errs = append(errs, c.validateHooksMount()...)
 
 	if len(errs) > 0 {
 		return fmt.Errorf(i18n.T("config validation failed:\n  - %s"), strings.Join(errs, "\n  - "))
@@ -401,6 +480,10 @@ func (c *Config) validateMount() []string {
 		}
 	}
 	validTops = append(validTops, AgentsMD)
+	for _, t := range HookTools {
+		validTarget[HookRegistryFiles[t]] = true
+		validTops = append(validTops, HookRegistryFiles[t])
+	}
 	out := c.OutDir()
 	rout := ResolveSymlinks(out)
 	for _, m := range c.Mount {
@@ -431,9 +514,32 @@ func (c *Config) validateMount() []string {
 				}
 			}
 		}
-		if len(m.Links) == 0 {
+		if len(m.Links) == 0 && len(m.Merge) == 0 {
 			errs = append(errs, fmt.Sprintf(i18n.T("mount %s is missing links"), m.Dir))
 			continue
+		}
+		for name, sub := range m.Merge {
+			if i := strings.Index(name, dupMark); i >= 0 {
+				errs = append(errs, fmt.Sprintf(i18n.T("mount %s defines merge.%s more than once with different targets; keep one"), m.Dir, name[:i]))
+				continue
+			}
+			if strings.ContainsAny(name, "/\\") || name == ".." || name == "." {
+				errs = append(errs, fmt.Sprintf(i18n.T("mount %s merge name %q is invalid; it must be a plain name without path separators"), m.Dir, name))
+				continue
+			}
+			if _, both := m.Links[name]; both {
+				errs = append(errs, fmt.Sprintf(i18n.T("mount %s defines %s both as a link and as a merge target; keep one"), m.Dir, name))
+				continue
+			}
+			clean := strings.Trim(filepath.ToSlash(sub), "/")
+			tool := RegistryTool(clean)
+			if tool == "" {
+				errs = append(errs, fmt.Sprintf(i18n.T("mount %s merge.%s points to %q, but only a hook registry file can be merged, valid values: %v"), m.Dir, name, sub, registryNames()))
+				continue
+			}
+			if !c.HasTool(tool) {
+				errs = append(errs, fmt.Sprintf(i18n.T("mount %s merge.%s targets %q, but build.tools does not list %q"), m.Dir, name, sub, tool))
+			}
 		}
 		for name, sub := range m.Links {
 			if i := strings.Index(name, dupMark); i >= 0 {
@@ -462,6 +568,53 @@ func (c *Config) validateMount() []string {
 		}
 	}
 	return errs
+}
+
+// registryNames lists the hook registry file names in HookTools order.
+func registryNames() []string {
+	var out []string
+	for _, t := range HookTools {
+		out = append(out, HookRegistryFiles[t])
+	}
+	return out
+}
+
+// validateHooksMount rejects a link to a hook registry whose tool is not in
+// build.tools: build never writes content into that registry, so the mounted
+// file would stay empty. The reverse (a tool listed but its registry not
+// mounted) is not an error; plan and doctor warn about it when the sources
+// contain hooks.
+func (c *Config) validateHooksMount() []string {
+	var errs []string
+	for _, m := range c.Mount {
+		for name, sub := range m.Links {
+			clean := strings.Trim(filepath.ToSlash(sub), "/")
+			tool := RegistryTool(clean)
+			if tool != "" && !c.HasTool(tool) {
+				errs = append(errs, fmt.Sprintf(i18n.T("mount %s links.%s points to %q, but build.tools does not list %q; the file would stay empty"), m.Dir, name, sub, tool))
+			}
+		}
+	}
+	return errs
+}
+
+// HookRegistryMounted reports whether any link or merge entry consumes the
+// registry of the given tool.
+func (c *Config) HookRegistryMounted(tool string) bool {
+	want := HookRegistryFiles[tool]
+	for _, m := range c.Mount {
+		for _, sub := range m.Links {
+			if strings.Trim(filepath.ToSlash(sub), "/") == want {
+				return true
+			}
+		}
+		for _, sub := range m.Merge {
+			if strings.Trim(filepath.ToSlash(sub), "/") == want {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // ExpandPath resolves a path written in one of three forms:

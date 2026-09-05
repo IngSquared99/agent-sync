@@ -21,17 +21,19 @@ import (
 
 // Item is one entry of the candidate list: in-memory intermediate data of the build
 type Item struct {
-	Category  string   // rules / skills / workflows
-	Name      string   // original file or directory name
-	OutName   string   // final name after conflict handling (equals Name when there is no conflict)
-	From      string   // absolute source path
-	SourceIdx int      // index of the source in the sources array (0-based; order is priority)
-	SourceTag string   // source tag (used by rename)
-	IsDir     bool     // skills are directories, everything else is a single file
-	Tools     []string // workflows: effective tool targets (empty only while unresolved)
-	SkillName string   // workflows: name of the derived skill directory
-	Renamed   bool     // renamed due to a conflict
-	RouteNote string   // routing note shown by plan
+	Category  string          // rules / skills / workflows
+	Name      string          // original file or directory name
+	OutName   string          // final name after conflict handling (equals Name when there is no conflict)
+	From      string          // absolute source path
+	SourceIdx int             // index of the source in the sources array (0-based; order is priority)
+	SourceTag string          // source tag (used by rename)
+	IsDir     bool            // skills are directories, everything else is a single file
+	Tools     []string        // workflows: effective tool targets (empty only while unresolved)
+	SkillName string          // workflows: name of the derived skill directory
+	Renamed   bool            // renamed due to a conflict
+	RouteNote string          // routing note shown by plan
+	Hook      *HookSpec       // hooks: parsed hook.yaml (nil while unresolved or broken)
+	HookOut   map[string]bool // hooks: tool → the hook contributes to that tool's registry
 }
 
 // Ignored is a file skipped during scanning: not an error, but it must be
@@ -56,7 +58,7 @@ const MaxMDBytes = 5 << 20
 // ManifestVersion is the manifest format version this agsy writes / understands.
 // Distinct from agsy.yaml's version: that one is the config format, this one is the
 // record-file format.
-const ManifestVersion = 1
+const ManifestVersion = 2
 
 // OutEntry is one output produced for an item. Derived marks conversions
 // (workflow→skill, stub, AGENTS.md) as opposed to verbatim copies; every
@@ -70,7 +72,7 @@ type OutEntry struct {
 }
 
 type ManifestItem struct {
-	Category string            `json:"category"`            // rules / skills / workflows / agents-md
+	Category string            `json:"category"`            // rules / skills / workflows / hooks / agents-md / hooks-registry
 	Name     string            `json:"name"`                // final name in the output
 	Original string            `json:"original"`            // original name
 	From     string            `json:"from"`                // source path (empty for agents-md)
@@ -92,6 +94,19 @@ type Manifest struct {
 	// otherwise claim all green). Untrusted like the rest of the manifest —
 	// consumers must verify a path IS a link into the output before touching it.
 	Mounts []string `json:"mounts,omitempty"`
+	// Merges records the JSON files apply merged hook entries into (Claude
+	// Code's settings.json). Untrusted as well: consumers re-derive ownership
+	// from the file content and only use the record for hashes and the
+	// created flag.
+	Merges []MergeRecord `json:"merges,omitempty"`
+}
+
+// MergeRecord is one merge target written by the last apply.
+type MergeRecord struct {
+	Path    string `json:"path"`    // absolute path of the merged file
+	Key     string `json:"key"`     // top-level key holding the entries (always "hooks")
+	Hash    string `json:"hash"`    // canonical hash of the agsy-owned entries written
+	Created bool   `json:"created"` // the file did not exist before apply created it
 }
 
 // SourceState is the result of expanding a source
@@ -157,6 +172,21 @@ func Accepts(cat, path string, isDir bool) (bool, string) {
 		if !fi.IsDir() && !fi.Mode().IsRegular() {
 			return false, i18n.T("not a regular file (FIFO, socket or device); it cannot be collected")
 		}
+	}
+	if cat == "hooks" {
+		if !isDir {
+			return false, i18n.T("hooks are directories; a single file is not accepted")
+		}
+		if st, err := os.Stat(filepath.Join(path, HookFile)); err != nil || st.IsDir() {
+			return false, i18n.T("hook directory has no hook.yaml")
+		}
+		if rel, found := FirstSymlinkWithin(path); found {
+			return false, fmt.Sprintf(i18n.T("contains a symbolic link (%s); the hook is not collected"), rel)
+		}
+		if rel, found := FirstIrregularWithin(path); found {
+			return false, fmt.Sprintf(i18n.T("contains an irregular file (%s, e.g. a FIFO); the hook is not collected"), rel)
+		}
+		return true, ""
 	}
 	if cat == "skills" {
 		if !isDir {
@@ -330,6 +360,8 @@ func Compute(cfg *config.Config, sources []SourceState) (*Plan, error) {
 	if err := filterWorkflows(cfg, p); err != nil {
 		return nil, err
 	}
+	// 3b. hooks: parse hook.yaml, check targets/overrides, decide per-tool reach
+	resolveHooks(cfg, p)
 	// 4. final output-path uniqueness (collisions are still possible after
 	// rename, and a workflow-derived skill can clash with a real skill)
 	detectCollisions(cfg, p)
@@ -661,7 +693,7 @@ func Execute(cfg *config.Config, p *Plan) (*Manifest, error) {
 		return nil, fmt.Errorf(i18n.T("final output names collide, cannot build"))
 	}
 	if len(p.RouteErrors) > 0 {
-		return nil, fmt.Errorf(i18n.T("workflow target problems exist, cannot build"))
+		return nil, fmt.Errorf(i18n.T("workflow target or hook declaration problems exist, cannot build"))
 	}
 	if p.Incomplete {
 		return nil, fmt.Errorf(i18n.T("some source paths do not exist; apply must not rebuild from an incomplete source list (plan can still preview)"))
@@ -777,6 +809,23 @@ func Execute(cfg *config.Config, p *Plan) (*Manifest, error) {
 		return nil, err
 	}
 	m.Items = append(m.Items, ami)
+	// Derived hook registries: one per tool in build.tools that has a
+	// dialect. Always produced (possibly empty) so a registry link or merge
+	// never points at nothing.
+	for _, tool := range cfg.Build.Tools {
+		if !HasHookDialect(tool) {
+			continue
+		}
+		rel := config.HookRegistryFiles[tool]
+		if err := WriteHookRegistry(cfg, p, tool, filepath.Join(out, rel)); err != nil {
+			return nil, err
+		}
+		hmi := ManifestItem{Category: "hooks-registry", Name: rel, Tools: []string{tool}}
+		if err := addOut(&hmi, rel, true); err != nil {
+			return nil, err
+		}
+		m.Items = append(m.Items, hmi)
+	}
 	// Ensure every mount target exists: with no items in a category its
 	// directory would never be created and a link pointing there would be
 	// broken (ls gives ENOENT). An empty directory is the correct "nothing
@@ -829,13 +878,13 @@ func verifySrcUnchanged(mi *ManifestItem, it Item) error {
 }
 
 // EnsureLinkTargets creates the target for every mount.links entry: a
-// directory for category targets, nothing extra for the AGENTS.md file (the
-// build always writes it).
+// directory for category targets, nothing extra for the derived files
+// (AGENTS.md and the hook registries: the build always writes them).
 func EnsureLinkTargets(cfg *config.Config) error {
 	out := cfg.OutDir()
 	for _, m := range cfg.Mount {
 		for _, sub := range m.Links {
-			if sub == config.AgentsMD {
+			if sub == config.AgentsMD || config.IsRegistryFile(sub) {
 				continue
 			}
 			p := filepath.Join(out, filepath.FromSlash(sub))
