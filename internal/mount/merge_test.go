@@ -1,0 +1,273 @@
+package mount
+
+import (
+	"encoding/json"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+
+	"github.com/IngSquared99/agent-sync/internal/build"
+	"github.com/IngSquared99/agent-sync/internal/config"
+)
+
+const mergeYAML = `version: 2
+sources:
+  - ./.flow
+build:
+  out: .agsy
+  on_conflict: {rules: rename, skills: error, workflows: rename, hooks: error}
+  tools: [claude]
+mount:
+  - dir: .claude
+    links: {rules: rules}
+    merge: {settings.json: hooks.claude.json}
+`
+
+// setupMerge writes a project whose output already holds a claude registry
+// with one agsy group for hook "block-rm".
+func setupMerge(t *testing.T) (*config.Config, string, string) {
+	t.Helper()
+	proj := t.TempDir()
+	p := filepath.Join(proj, config.FileName)
+	if err := os.WriteFile(p, []byte(mergeYAML), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := config.Load(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	out := cfg.OutDir()
+	if err := os.MkdirAll(filepath.Join(out, "rules"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	script := filepath.Join(out, "hooks", "block-rm", "block-rm.sh")
+	reg := `{"hooks":{"PreToolUse":[{"matcher":"Bash","hooks":[{"type":"command","command":` + jsonStr(script) + `,"timeout":10}]}]}}`
+	if err := os.WriteFile(filepath.Join(out, "hooks.claude.json"), []byte(reg), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return cfg, filepath.Join(proj, ".claude", "settings.json"), script
+}
+
+func jsonStr(s string) string {
+	b, _ := json.Marshal(s)
+	return string(b)
+}
+
+func writeSettings(t *testing.T, path, body string) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func applyOnce(t *testing.T, cfg *config.Config, recs []build.MergeRecord) ([]MergePlan, []build.MergeRecord) {
+	t.Helper()
+	plans, err := InspectMerge(cfg, recs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	out, err := ApplyMerge(cfg, plans)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return plans, out
+}
+
+func TestMergeCreatesFileAndRecordsCreated(t *testing.T) {
+	cfg, settings, script := setupMerge(t)
+	plans, recs := applyOnce(t, cfg, nil)
+	if plans[0].State != MergeMissing {
+		t.Fatalf("state = %v", plans[0].State)
+	}
+	raw, err := os.ReadFile(settings)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(raw), script) || !strings.HasPrefix(string(raw), "{\n  \"hooks\": {") {
+		t.Errorf("settings.json:\n%s", raw)
+	}
+	if len(recs) != 1 || !recs[0].Created || recs[0].Hash == "" {
+		t.Errorf("records = %+v", recs)
+	}
+	again, _ := InspectMerge(cfg, recs)
+	if again[0].State != MergeClean || again[0].Owned != 1 {
+		t.Errorf("after apply: state=%v owned=%d", again[0].State, again[0].Owned)
+	}
+}
+
+func TestMergePreservesForeignContentAndOrder(t *testing.T) {
+	cfg, settings, script := setupMerge(t)
+	writeSettings(t, settings, `{
+  "zeta": {"deep": [1, 2, {"x": null}]},
+  "permissions": {"allow": ["Bash(npm test)"]},
+  "hooks": {
+    "PreToolUse": [
+      {"matcher": "Edit", "hooks": [{"type": "command", "command": ".claude/hooks/mine.sh"}]}
+    ],
+    "Stop": [
+      {"hooks": [{"type": "command", "command": "echo bye"}]}
+    ]
+  },
+  "alpha": true
+}
+`)
+	plans, recs := applyOnce(t, cfg, nil)
+	if plans[0].State != MergeAbsent {
+		t.Fatalf("state = %v", plans[0].State)
+	}
+	raw, _ := os.ReadFile(settings)
+	s := string(raw)
+	// top-level order kept; foreign groups kept; agsy group appended after
+	for _, pair := range [][2]string{{`"zeta"`, `"permissions"`}, {`"permissions"`, `"hooks"`}, {`"hooks"`, `"alpha"`}, {`mine.sh`, script}, {`"PreToolUse"`, `"Stop"`}} {
+		if strings.Index(s, pair[0]) > strings.Index(s, pair[1]) || !strings.Contains(s, pair[1]) {
+			t.Errorf("order/content wrong for %v:\n%s", pair, s)
+		}
+	}
+	if !strings.Contains(s, `"deep": [`) || !strings.Contains(s, `"x": null`) || !strings.Contains(s, `echo bye`) {
+		t.Errorf("foreign content lost:\n%s", s)
+	}
+	if recs[0].Created {
+		t.Error("pre-existing file must not be marked created")
+	}
+	// second apply is idempotent
+	applyOnce(t, cfg, recs)
+	raw2, _ := os.ReadFile(settings)
+	if string(raw2) != s {
+		t.Errorf("second apply changed the file:\n%s\n---\n%s", s, raw2)
+	}
+}
+
+func TestMergeDetectsModifiedAndReplacesWholeGroup(t *testing.T) {
+	cfg, settings, script := setupMerge(t)
+	_, recs := applyOnce(t, cfg, nil)
+	raw, _ := os.ReadFile(settings)
+	edited := strings.Replace(string(raw), `"timeout": 10`, `"timeout": 99`, 1)
+	if err := os.WriteFile(settings, []byte(edited), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	plans, _ := InspectMerge(cfg, recs)
+	if plans[0].State != MergeModified {
+		t.Fatalf("state = %v, want Modified", plans[0].State)
+	}
+	// a user handler smuggled into the agsy group is replaced with the group
+	mixed := strings.Replace(edited, `"timeout": 99`, `"timeout": 99}, {"type": "command", "command": "my-extra.sh"`, 1)
+	if err := os.WriteFile(settings, []byte(mixed), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	applyOnce(t, cfg, recs)
+	raw, _ = os.ReadFile(settings)
+	if strings.Contains(string(raw), "my-extra.sh") || strings.Contains(string(raw), "99") || !strings.Contains(string(raw), script) {
+		t.Errorf("group not rebuilt:\n%s", raw)
+	}
+}
+
+func TestMergeInvalidTargets(t *testing.T) {
+	cfg, settings, _ := setupMerge(t)
+	for name, body := range map[string]string{"array": "[1,2]", "broken": "{\"a\":", "hooksNotObject": `{"hooks": 5}`, "eventNotArray": `{"hooks": {"Stop": {}}}`} {
+		writeSettings(t, settings, body)
+		plans, err := InspectMerge(cfg, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if plans[0].State != MergeInvalid {
+			t.Errorf("%s: state = %v, want Invalid", name, plans[0].State)
+		}
+		if _, err := ApplyMerge(cfg, plans); err == nil {
+			t.Errorf("%s: ApplyMerge must refuse", name)
+		}
+	}
+	// symlink
+	os.Remove(settings)
+	real := filepath.Join(filepath.Dir(settings), "real.json")
+	writeSettings(t, real, "{}")
+	if err := os.Symlink(real, settings); err == nil {
+		plans, _ := InspectMerge(cfg, nil)
+		if plans[0].State != MergeInvalid || !strings.Contains(plans[0].Note, "symbolic link") {
+			t.Errorf("symlink: %v %q", plans[0].State, plans[0].Note)
+		}
+	}
+	// empty file counts as {}
+	os.Remove(settings)
+	writeSettings(t, settings, "")
+	plans, _ := InspectMerge(cfg, nil)
+	if plans[0].State != MergeAbsent {
+		t.Errorf("empty file: state = %v", plans[0].State)
+	}
+}
+
+func TestRemoveMergeDeletesOnlyCreatedFiles(t *testing.T) {
+	cfg, settings, _ := setupMerge(t)
+	_, recs := applyOnce(t, cfg, nil)
+	cleaned, deleted, skipped, err := RemoveMerge(cfg, recs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(deleted) != 1 || len(cleaned) != 0 || len(skipped) != 0 {
+		t.Errorf("cleaned=%v deleted=%v skipped=%v", cleaned, deleted, skipped)
+	}
+	if _, err := os.Stat(settings); !os.IsNotExist(err) {
+		t.Error("created file must be deleted when empty after clean")
+	}
+	if _, err := os.Stat(filepath.Dir(settings)); !os.IsNotExist(err) {
+		t.Error("empty .claude dir must be removed too")
+	}
+
+	// pre-existing file: keep it, strip agsy groups, drop empty hooks key
+	writeSettings(t, settings, `{"model": "opus", "hooks": {"Stop": [{"hooks": [{"command": "echo"}]}]}}`)
+	_, recs = applyOnce(t, cfg, nil)
+	cleaned, deleted, _, err = RemoveMerge(cfg, recs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, _ := os.ReadFile(settings)
+	if len(cleaned) != 1 || len(deleted) != 0 || strings.Contains(string(raw), ".agsy") || !strings.Contains(string(raw), `"echo"`) || !strings.Contains(string(raw), `"opus"`) {
+		t.Errorf("clean result:\n%s (cleaned=%v deleted=%v)", raw, cleaned, deleted)
+	}
+	// user-only hooks removed → hooks key dropped entirely
+	writeSettings(t, settings, `{"model": "opus"}`)
+	_, recs = applyOnce(t, cfg, nil)
+	RemoveMerge(cfg, recs)
+	raw, _ = os.ReadFile(settings)
+	if strings.Contains(string(raw), "hooks") || !strings.Contains(string(raw), "opus") {
+		t.Errorf("hooks key should be dropped:\n%s", raw)
+	}
+}
+
+func TestOwnsGroup(t *testing.T) {
+	abs := filepath.Join(string(filepath.Separator), "p", ".agsy", "hooks")
+	in := filepath.Join(abs, "h", "x.sh")
+	cases := map[string]bool{
+		`{"hooks":[{"command":` + jsonStr(in) + `}]}`:                   true,
+		`{"hooks":[{"command":` + jsonStr("python3 "+in) + `}]}`:        true,
+		`{"hooks":[{"command":"./x.sh"}]}`:                              false,
+		`{"hooks":[{"command":` + jsonStr(abs+"-other/x.sh") + `}]}`:    false,
+		`{"hooks":[{"type":"http","url":"http://x"}]}`:                  false,
+		`{"hooks":[{"command":"a"},{"command":` + jsonStr(in) + `}]}`:   true,
+		`{"hooks":[{"command":` + jsonStr(filepath.ToSlash(in)) + `}]}`: true,
+		`5`: false,
+		`{"hooks":[{"type":"http","url":"http://x","statusMessage":"agsy:greet"}]}`: true,
+		`{"hooks":[{"type":"http","url":"http://x","statusMessage":"mine"}]}`:       false,
+	}
+	for g, want := range cases {
+		if got := ownsGroup(json.RawMessage(g), abs); got != want {
+			t.Errorf("ownsGroup(%s) = %v, want %v", g, got, want)
+		}
+	}
+}
+
+func TestIsFileTarget(t *testing.T) {
+	for _, s := range []string{"AGENTS.md", "hooks.claude.json", "hooks.cursor.json", "/hooks.codex.json/"} {
+		if !IsFileTarget(s) {
+			t.Errorf("%s should be a file target", s)
+		}
+	}
+	for _, s := range []string{"rules", "hooks", "skills"} {
+		if IsFileTarget(s) {
+			t.Errorf("%s should not be a file target", s)
+		}
+	}
+}

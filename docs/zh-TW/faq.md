@@ -130,4 +130,38 @@ agsy 絕不合併或覆蓋真實檔案：`init` 立即提醒、`apply` 拒絕執
 
 不會。掃描一律不收符號連結（含 skill 目錄內部——含連結的 skill 整個略過），複製階段還有第二道防線直接拒絕。產物會被掛載給所有工具讀，連結絕不能夾帶來源以外的檔案。
 
+## hooks
+
+### Q25：hook 到底是什麼？是 webhook 嗎？
+
+不是。AI 開發工具在你送出一句話之後會跑一個迴圈：模型思考 → 執行工具 → 結果回到模型 → …。hook 是掛在這個迴圈固定位置（例如「工具執行前」`PreToolUse`、「準備停下前」`Stop`）的檢查點：agent 走到那裡會暫停，在本機執行你的腳本、把現況以 JSON 從 stdin 餵給它，腳本 exit 2 就擋下、exit 0 就放行。全程在本機、不經網路。webhook 是「某服務發生事件時對你的網址發 HTTP 請求」，只是名字裡都有 hook。
+
+### Q26：rules 已經寫了「禁止 rm -rf」，為什麼還要 hook？
+
+rules 是給模型讀的文字，遵不遵守是機率性的——context 太長、跟任務目標衝突時可能被忽略。hook 是程式：擋下就是擋下，模型沒有選擇。凡是能寫成 if 的規範用 hook；風格與偏好這類無法用程式判斷的仍用 rules。
+
+### Q27：為什麼 Claude Code 用 merge 而其他三家用連結？
+
+Codex、Antigravity、Cursor 都有獨立的 `hooks.json`，整檔交給 agsy 用連結接管最乾淨。Claude Code 的 hooks 只能寫在 `.claude/settings.json` 的 `hooks` 鍵，而那份檔還裝著你的 permissions、model 等設定，整檔連結會吃掉它們，所以 agsy 只合併自己的條目進去。辨識方式跟連結一樣：command 指向 `.agsy/hooks/` 的就是 agsy 的，不需要任何標記。
+
+### Q28：我自己的 hooks 要放哪？
+
+專案層登記表由 agsy 擁有；個人的放各家的個人層，四家都是疊加、互不覆蓋：Claude Code 放 `.claude/settings.local.json` 或 `~/.claude/settings.json`；Codex 放 `~/.codex/hooks.json` 或 `config.toml`；Cursor 放 `~/.cursor/hooks.json`；Antigravity 有 `~/.gemini/config/`（官方未載明合併方式，請實測）。
+
+### Q29：一支腳本能四家通用嗎？
+
+登記表可以（agsy 負責翻譯事件名、結構、路徑），腳本內容要自己處理差異：四家餵給腳本的 JSON 欄位不同，Claude / Codex 是 `tool_input.command`，Cursor 與 Antigravity 各有一套；matcher 裡「shell 工具」的名字也不同（Bash / Bash / run_command / Shell，用 `overrides` 指定）。腳本先看 `hook_event_name` 或各家欄位再判斷。
+
+### Q30：hook 在某家沒生效？
+
+`agsy plan` 會在每個 hook 下面列出 `claude ✓  codex ✓  antigravity —  cursor ✓` 與原因：該家官方沒有這個掛勾點（例如 Antigravity 只有五個事件，沒有 `SessionStart`）、不支援這種 handler type（Codex 沒有 `http`）、或 `target:` 沒列它。另外兩家都要求專案層 hooks 先被「信任」（工作區信任對話框），第一次啟動工具時記得同意。
+
+### Q31：Windows 上腳本跑不起來？
+
+agsy 保證登記表正確（含路徑跳脫），但 `.sh` 在 Windows 不能直接執行。在 `hook.yaml` 用 `command: python3 ./check.py` 這種指定直譯器的寫法，或用 `overrides.codex.hooks[0].commandWindows` 之類各家自己的欄位。
+
+### Q32：從 v0.1 升級，apply 說 `build.on_conflict.hooks 未設定`？
+
+v0.2.0 新增了 hooks 類別，衝突策略跟其他類別一樣必填。在 `agsy.yaml` 的 `on_conflict` 加一行 `hooks: error` 即可，不掛任何登記表也不會報錯。要啟用四家的 hooks，重跑 `agsy init` 讓 adapter 補上 `.codex`、`.cursor`、`.agents/hooks.json` 與 `.claude` 的 `merge`，或照[設定檔](config.md)手動加。
+
 → 回到：[核心概念](overview.md)

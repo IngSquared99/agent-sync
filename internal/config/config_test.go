@@ -15,7 +15,7 @@ sources:
   - ./src
 build:
   out: .agsy
-  on_conflict: {rules: rename, skills: error, workflows: rename}
+  on_conflict: {rules: rename, skills: error, workflows: rename, hooks: error}
   tools: [claude, codex]
 mount:
   - dir: .claude
@@ -103,8 +103,8 @@ func TestCategoriesFromMustDiffer(t *testing.T) {
 func TestOnConflictRequired(t *testing.T) {
 	i18n.SetLang("en")
 	body := strings.Replace(baseYAML,
-		"on_conflict: {rules: rename, skills: error, workflows: rename}",
-		"on_conflict: {rules: rename, workflows: rename}", 1)
+		"on_conflict: {rules: rename, skills: error, workflows: rename, hooks: error}",
+		"on_conflict: {rules: rename, workflows: rename, hooks: error}", 1)
 	mustFail(t, body, "build.on_conflict.skills is not set")
 
 	body = strings.Replace(baseYAML, "skills: error", "skills: whatever", 1)

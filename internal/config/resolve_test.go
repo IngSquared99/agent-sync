@@ -31,7 +31,7 @@ func TestSymlinkedOutRejected(t *testing.T) {
 sources: [./lib]
 build:
   out: ./data/out
-  on_conflict: {rules: rename, skills: error, workflows: rename}
+  on_conflict: {rules: rename, skills: error, workflows: rename, hooks: error}
   tools: [claude]
 mount:
   - dir: .claude

@@ -4,7 +4,7 @@ First sync in four steps, all inside the project directory.
 
 ## Step 0: prepare a source library
 
-A source is a directory with up to three subdirectories; any subset works:
+A source is a directory with up to four subdirectories; any subset works:
 
 ```
 ~/all-ai-lib/
@@ -13,8 +13,12 @@ A source is a directory with up to three subdirectories; any subset works:
 ├── skills/
 │   └── code-review/
 │       └── SKILL.md             # a directory with a SKILL.md
-└── workflows/
-    └── deploy.md                # a plain markdown file, optional target: front matter
+├── workflows/
+│   └── deploy.md                # a plain markdown file, optional target: front matter
+└── hooks/
+    └── block-rm/
+        ├── hook.yaml            # declaration: which event, which tools, which script
+        └── block-rm.sh          # the script (exit 2 = block)
 ```
 
 You can point at one library or several; a common setup is a personal shared library (`~/all-ai-lib`) plus an in-project one (`./repo-ai-lib`).
@@ -32,15 +36,16 @@ Source paths, ordered by priority (~ prefix = shared library, ./ prefix = in-pro
   source 3: ⏎
 
 Which tools should be served? (space-separate multiple numbers, a = all, Enter = all)
-    1) Claude Code (.claude/)
-    2) OpenAI Codex (.agents/)
-    3) Antigravity (.agents/)
-    4) Cursor (.agents/)
+    1) Antigravity (.agents/)
+    2) Claude Code (.claude/)
+    3) OpenAI Codex (.agents/, .codex/)
+    4) Cursor (.agents/, .cursor/)
 Enter your choice: a
 
 How should same-name conflicts in rules be handled?(recommended rename…)     ❯ rename
 How should same-name conflicts in skills be handled?(recommended error…)     ❯ error
 How should same-name conflicts in workflows be handled?                      ❯ rename
+How should same-name conflicts in hooks be handled? (recommended error…)     ❯ error
 
 Build output directory (default: .agsy): ⏎
 
@@ -48,7 +53,7 @@ Build output directory (default: .agsy): ⏎
 
 The following generated paths are rebuildable and usually belong in .gitignore:
 Add which entries to .gitignore? (a = all) a
-  ✔ Added 7 entries to .gitignore
+  ✔ Added 10 entries to .gitignore
   Next: agsy plan to preview → agsy apply to execute
 ```
 
@@ -68,8 +73,9 @@ The preview lists, per category, everything the build would collect: which rules
 
 ```
 $ agsy apply
-✔ build done: 12 items → .agsy/
-✔ mount done: 5 links
+✔ build done: 13 items → .agsy/
+✔ mount done: 8 links
+✔ merge done: .claude/settings.json ← hooks.claude.json
 ```
 
 Resulting project layout:
@@ -79,14 +85,20 @@ your-project/
 ├── AGENTS.md          → .agsy/AGENTS.md         (all rules, concatenated)
 ├── .claude/
 │   ├── rules          → .agsy/rules
-│   └── skills         → .agsy/skills
+│   ├── skills         → .agsy/skills
+│   └── settings.json  ⇐ .agsy/hooks.claude.json (merge: only the "hooks" key is written)
 ├── .agents/
 │   ├── skills         → .agsy/skills
-│   └── workflows      → .agsy/workflows
+│   ├── workflows      → .agsy/workflows
+│   └── hooks.json     → .agsy/hooks.antigravity.json
+├── .codex/
+│   └── hooks.json     → .agsy/hooks.codex.json
+├── .cursor/
+│   └── hooks.json     → .agsy/hooks.cursor.json
 └── .agsy/             the built output
 ```
 
-Each tool reads its native locations and finds the same content. `/deploy` in Claude Code or Cursor runs the workflow's skill form; in Antigravity it runs the stub, which loads that skill.
+Each tool reads its native locations and finds the same content. `/deploy` in Claude Code or Cursor runs the workflow's skill form; in Antigravity it runs the stub, which loads that skill. All four run `block-rm.sh` before executing a shell command — when it exits with 2, the command does not run.
 
 ## Step 4: the daily loop
 
