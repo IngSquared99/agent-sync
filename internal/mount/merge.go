@@ -1,9 +1,10 @@
 // Merge mounts: used for Claude Code, whose hooks live in the "hooks" key of
 // .claude/settings.json alongside user settings and therefore cannot be
 // linked as a whole file. agsy owns exactly the matcher groups under "hooks"
-// whose command points into the output hooks directory (or that carry the
-// OwnerMark); the criterion mirrors IsManagedLink. Every other top-level key
-// and every foreign group is preserved as is.
+// that carry the OwnerMark or whose command points into the output hooks
+// directory (current, or the one recorded by the previous apply); the
+// criterion mirrors IsManagedLink. Every other top-level key and every
+// foreign group is preserved as is.
 package mount
 
 import (
@@ -37,6 +38,7 @@ const (
 	MergeModified                   // agsy groups present but changed on the artifact side
 	MergeAbsent                     // valid file, no agsy groups yet → apply adds them
 	MergeInvalid                    // symlink, not a regular file, or not a JSON object → apply refuses, clean skips
+	MergeIdle                       // nothing to merge and nothing of agsy's in the file (or no file) → apply and clean leave it alone
 )
 
 // MergePlan describes one merge target (shared by plan / status / apply / clean).
@@ -58,12 +60,37 @@ type kv struct {
 	raw json.RawMessage
 }
 
+// ownerPrefixes lists every output hooks directory whose paths mark a group
+// as agsy's: the current one plus those recorded by earlier applies (the
+// manifest is untrusted, but a prefix only widens what agsy claims as its
+// own to rewrite — never what it deletes outside the hooks key).
+func ownerPrefixes(cfg *config.Config, records []build.MergeRecord) []string {
+	cur := filepath.Join(cfg.OutDir(), filepath.FromSlash(cfg.Build.Categories["hooks"].To))
+	out := []string{cur}
+	for _, r := range records {
+		if r.HooksDir != "" && filepath.Clean(r.HooksDir) != filepath.Clean(cur) && !containsPath(out, r.HooksDir) {
+			out = append(out, r.HooksDir)
+		}
+	}
+	return out
+}
+
+func containsPath(list []string, p string) bool {
+	for _, x := range list {
+		if filepath.Clean(x) == filepath.Clean(p) {
+			return true
+		}
+	}
+	return false
+}
+
 // InspectMerge reports the state of every merge entry. records (from the
-// manifest, untrusted) only contribute the created flag and the hash of the
-// last write; ownership is always re-derived from the file content.
+// manifest, untrusted) only contribute the created flag, the hash of the
+// last write and the previous hooks directory; ownership is always
+// re-derived from the file content.
 func InspectMerge(cfg *config.Config, records []build.MergeRecord) ([]MergePlan, error) {
 	out := cfg.OutDir()
-	hooksAbs := filepath.Join(out, filepath.FromSlash(cfg.Build.Categories["hooks"].To))
+	prefixes := ownerPrefixes(cfg, records)
 	var plans []MergePlan
 	for _, m := range cfg.Mount {
 		mdir, err := cfg.ExpandPath(m.Dir)
@@ -83,26 +110,31 @@ func InspectMerge(cfg *config.Config, records []build.MergeRecord) ([]MergePlan,
 				Registry: filepath.Join(out, filepath.FromSlash(sub)),
 				Tool:     config.RegistryTool(sub),
 			}
-			var rec *build.MergeRecord
-			for i := range records {
-				if filepath.Clean(records[i].Path) == filepath.Clean(mp.FilePath) && records[i].Key == MergeKey {
-					rec = &records[i]
-				}
-			}
+			rec := findRecord(records, mp.FilePath)
 			if rec != nil {
 				mp.Created = rec.Created
 			}
-			inspectMerge(&mp, hooksAbs, rec)
+			inspectMerge(&mp, prefixes, rec)
 			plans = append(plans, mp)
 		}
 	}
 	return plans, nil
 }
 
-func inspectMerge(mp *MergePlan, hooksAbs string, rec *build.MergeRecord) {
+func findRecord(records []build.MergeRecord, path string) *build.MergeRecord {
+	var rec *build.MergeRecord
+	for i := range records {
+		if filepath.Clean(records[i].Path) == filepath.Clean(path) && records[i].Key == MergeKey {
+			rec = &records[i]
+		}
+	}
+	return rec
+}
+
+func inspectMerge(mp *MergePlan, prefixes []string, rec *build.MergeRecord) {
 	// What the last apply wrote (or, before any apply, what the registry
 	// holds). An empty set means "nothing to merge": a missing file or a
-	// file without agsy groups is then the correct state, not a gap.
+	// file without agsy groups is then Idle — the correct state, not a gap.
 	want := ""
 	if rec != nil {
 		want = rec.Hash
@@ -114,7 +146,7 @@ func inspectMerge(mp *MergePlan, hooksAbs string, rec *build.MergeRecord) {
 	case err != nil:
 		mp.State = MergeMissing
 		if want == emptyHash {
-			mp.State = MergeClean
+			mp.State = MergeIdle
 		}
 		return
 	case fi.Mode()&os.ModeSymlink != 0:
@@ -126,37 +158,19 @@ func inspectMerge(mp *MergePlan, hooksAbs string, rec *build.MergeRecord) {
 		mp.Note = i18n.T("is not a regular file")
 		return
 	}
-	top, err := readTop(mp.FilePath)
+	owned, err := ownedGroups(mp.FilePath, prefixes)
 	if err != nil {
 		mp.State = MergeInvalid
 		mp.Note = err.Error()
 		return
 	}
-	events, err := hooksOf(top)
-	if err != nil {
-		mp.State = MergeInvalid
-		mp.Note = err.Error()
-		return
-	}
-	owned := map[string][]json.RawMessage{}
-	for _, ev := range events {
-		var groups []json.RawMessage
-		if err := json.Unmarshal(ev.raw, &groups); err != nil {
-			mp.State = MergeInvalid
-			mp.Note = fmt.Sprintf(i18n.T("%s.%s is not an array"), MergeKey, ev.key)
-			return
-		}
-		for _, g := range groups {
-			if ownsGroup(g, hooksAbs) {
-				owned[ev.key] = append(owned[ev.key], g)
-				mp.Owned++
-			}
-		}
+	for _, gs := range owned {
+		mp.Owned += len(gs)
 	}
 	if mp.Owned == 0 {
 		mp.State = MergeAbsent
 		if want == emptyHash {
-			mp.State = MergeClean
+			mp.State = MergeIdle
 		}
 		return
 	}
@@ -166,6 +180,71 @@ func inspectMerge(mp *MergePlan, hooksAbs string, rec *build.MergeRecord) {
 	}
 	mp.State = MergeModified
 	mp.Note = i18n.T("agsy entries in the hooks key were modified")
+}
+
+// ownedGroups returns the agsy-owned groups of a merge target by event. The
+// error names what makes the file unusable as a merge target.
+func ownedGroups(path string, prefixes []string) (map[string][]json.RawMessage, error) {
+	top, err := readTop(path)
+	if err != nil {
+		return nil, err
+	}
+	events, err := hooksOf(top)
+	if err != nil {
+		return nil, err
+	}
+	owned := map[string][]json.RawMessage{}
+	for _, ev := range events {
+		var groups []json.RawMessage
+		if err := json.Unmarshal(ev.raw, &groups); err != nil {
+			return nil, fmt.Errorf(i18n.T("%s.%s is not an array"), MergeKey, ev.key)
+		}
+		for _, g := range groups {
+			if ownsGroup(g, prefixes) {
+				owned[ev.key] = append(owned[ev.key], g)
+			}
+		}
+	}
+	return owned, nil
+}
+
+// MergeOrphans lists files an earlier apply merged into that the current
+// mount config no longer names, and that still carry agsy groups. Like
+// orphaned links they are reported by status and cleared by clean, never
+// touched by apply. The record paths are untrusted: a file is listed only
+// when it verifiably holds agsy groups.
+func MergeOrphans(cfg *config.Config, records []build.MergeRecord) ([]string, error) {
+	plans, err := InspectMerge(cfg, records)
+	if err != nil {
+		return nil, err
+	}
+	current := map[string]bool{}
+	for _, p := range plans {
+		current[filepath.Clean(p.FilePath)] = true
+	}
+	prefixes := ownerPrefixes(cfg, records)
+	var out []string
+	seen := map[string]bool{}
+	for _, r := range records {
+		p := filepath.Clean(r.Path)
+		if r.Key != MergeKey || current[p] || seen[p] {
+			continue
+		}
+		seen[p] = true
+		fi, err := os.Lstat(p)
+		if err != nil || !fi.Mode().IsRegular() {
+			continue
+		}
+		owned, err := ownedGroups(p, prefixes)
+		if err != nil {
+			continue
+		}
+		if len(owned) > 0 {
+			out = append(out, p)
+		}
+	}
+	sort.Strings(out)
+	return out, nil
 }
 
 func toRaw(r build.RegistryGroups) map[string][]json.RawMessage {
@@ -245,10 +324,11 @@ func hooksOf(top []kv) ([]kv, error) {
 	return nil, nil
 }
 
-// ownsGroup reports whether a matcher group belongs to agsy: a command
-// handler whose command names a path inside the output hooks directory, or a
-// handler whose statusMessage carries build.OwnerMark.
-func ownsGroup(group json.RawMessage, hooksAbs string) bool {
+// ownsGroup reports whether a matcher group belongs to agsy: a handler
+// whose statusMessage carries build.OwnerMark, or a command handler whose
+// command names a path (quoted or not) inside one of the output hooks
+// directories.
+func ownsGroup(group json.RawMessage, prefixes []string) bool {
 	var g struct {
 		Hooks []struct {
 			Command       string `json:"command"`
@@ -258,14 +338,15 @@ func ownsGroup(group json.RawMessage, hooksAbs string) bool {
 	if err := json.Unmarshal(group, &g); err != nil {
 		return false
 	}
-	prefix := filepath.Clean(hooksAbs) + string(filepath.Separator)
 	for _, h := range g.Hooks {
 		if strings.HasPrefix(h.StatusMessage, build.OwnerMark) {
 			return true
 		}
-		for _, tok := range strings.Fields(h.Command) {
-			if hasPathPrefix(tok, prefix) {
-				return true
+		for _, tok := range build.SplitCommand(h.Command) {
+			for _, dir := range prefixes {
+				if hasPathPrefix(tok, filepath.Clean(dir)+string(filepath.Separator)) {
+					return true
+				}
 			}
 		}
 	}
@@ -282,8 +363,9 @@ func hasPathPrefix(p, prefix string) bool {
 
 // ApplyMerge writes every merge target: agsy groups are replaced by the
 // registry's groups, everything else is preserved byte-for-byte (apart from
-// re-indentation). Invalid targets abort before anything is written.
-func ApplyMerge(cfg *config.Config, plans []MergePlan) ([]build.MergeRecord, error) {
+// re-indentation). Invalid targets abort before anything is written; Idle
+// ones are not touched.
+func ApplyMerge(cfg *config.Config, plans []MergePlan, records []build.MergeRecord) ([]build.MergeRecord, error) {
 	var bad []string
 	for _, p := range plans {
 		if p.State == MergeInvalid {
@@ -294,41 +376,74 @@ func ApplyMerge(cfg *config.Config, plans []MergePlan) ([]build.MergeRecord, err
 		return nil, fmt.Errorf(i18n.T("the following merge targets cannot be updated (symbolic link or not a JSON object):\n  %s\nfix them manually, then retry"), strings.Join(bad, "\n  "))
 	}
 	hooksAbs := filepath.Join(cfg.OutDir(), filepath.FromSlash(cfg.Build.Categories["hooks"].To))
-	var records []build.MergeRecord
+	prefixes := ownerPrefixes(cfg, records)
+	var out []build.MergeRecord
 	for _, p := range plans {
 		reg, err := build.LoadRegistryGroups(p.Registry)
 		if err != nil {
-			return records, err
+			return out, err
 		}
 		incoming := toRaw(reg)
 		_, exists := os.Lstat(p.FilePath)
 		created := exists != nil || p.Created
-		if len(incoming) == 0 && (exists != nil || p.Owned == 0) {
+		prior := shellsOf(findRecord(records, p.FilePath))
+		if p.State == MergeIdle || (len(incoming) == 0 && (exists != nil || p.Owned == 0)) {
 			// Nothing to merge and nothing of agsy's in the file: the file
 			// is neither created nor rewritten.
-			records = append(records, build.MergeRecord{Path: p.FilePath, Key: MergeKey, Hash: emptyHash, Created: p.Created})
+			out = append(out, build.MergeRecord{Path: p.FilePath, Key: MergeKey, Hash: emptyHash, Created: p.Created, HooksDir: hooksAbs})
 			continue
 		}
-		if err := writeMerged(p.FilePath, hooksAbs, incoming, reg.Order); err != nil {
-			return records, fmt.Errorf(i18n.T("failed to merge into %s: %w"), p.FilePath, err)
+		added, err := writeMerged(p.FilePath, prefixes, incoming, reg.Order, prior)
+		if err != nil {
+			return out, fmt.Errorf(i18n.T("failed to merge into %s: %w"), p.FilePath, err)
 		}
-		records = append(records, build.MergeRecord{
-			Path: p.FilePath, Key: MergeKey, Hash: build.CanonicalHash(incoming), Created: created,
+		out = append(out, build.MergeRecord{
+			Path: p.FilePath, Key: MergeKey, Hash: build.CanonicalHash(incoming), Created: created, HooksDir: hooksAbs,
+			AddedKey: added.key, AddedEvents: added.events,
 		})
 	}
-	return records, nil
+	return out, nil
+}
+
+// shells records which containers apply introduced into a merge target: the
+// "hooks" key itself and the event arrays. The manifest keeps them so a later
+// apply or clean removes exactly those when they run empty and leaves the
+// user's own (possibly empty) arrays and key alone.
+type shells struct {
+	key    bool
+	events []string
+}
+
+func shellsOf(rec *build.MergeRecord) shells {
+	if rec == nil {
+		return shells{}
+	}
+	return shells{key: rec.AddedKey, events: rec.AddedEvents}
+}
+
+func (s shells) has(ev string) bool {
+	for _, e := range s.events {
+		if e == ev {
+			return true
+		}
+	}
+	return false
 }
 
 // writeMerged rewrites path with agsy groups replaced by incoming (nil =
-// remove all). Returns whether the resulting document is empty.
-func writeMerged(path, hooksAbs string, incoming map[string][]json.RawMessage, order []string) error {
+// remove all). What the user had stays: an event array or the "hooks" key
+// that was in the file before agsy touched it is kept even when removing
+// agsy's groups leaves it empty; containers agsy itself added (per prior)
+// are dropped again once empty. Returns the containers agsy is responsible
+// for after this write.
+func writeMerged(path string, prefixes []string, incoming map[string][]json.RawMessage, order []string, prior shells) (shells, error) {
 	top, err := readTop(path)
 	if err != nil && !os.IsNotExist(err) {
-		return err
+		return prior, err
 	}
 	events, err := hooksOf(top)
 	if err != nil {
-		return err
+		return prior, err
 	}
 	// Existing events, foreign groups only, in file order.
 	var evOrder []string
@@ -336,11 +451,12 @@ func writeMerged(path, hooksAbs string, incoming map[string][]json.RawMessage, o
 	for _, ev := range events {
 		var groups []json.RawMessage
 		if err := json.Unmarshal(ev.raw, &groups); err != nil {
-			return fmt.Errorf(i18n.T("%s.%s is not an array"), MergeKey, ev.key)
+			return prior, fmt.Errorf(i18n.T("%s.%s is not an array"), MergeKey, ev.key)
 		}
 		evOrder = append(evOrder, ev.key)
+		kept[ev.key] = []json.RawMessage{}
 		for _, g := range groups {
-			if !ownsGroup(g, hooksAbs) {
+			if !ownsGroup(g, prefixes) {
 				kept[ev.key] = append(kept[ev.key], g)
 			}
 		}
@@ -356,14 +472,26 @@ func writeMerged(path, hooksAbs string, incoming map[string][]json.RawMessage, o
 			evOrder = append(evOrder, ev)
 		}
 	}
+	hadKey := false
+	for _, m := range top {
+		if m.key == MergeKey {
+			hadKey = true
+		}
+	}
 	// Rebuild the hooks object.
 	var hb bytes.Buffer
 	hb.WriteByte('{')
 	n := 0
+	next := shells{key: prior.key || !hadKey}
 	for _, ev := range evOrder {
 		groups := append(append([]json.RawMessage{}, kept[ev]...), incoming[ev]...)
-		if len(groups) == 0 {
+		_, existed := kept[ev]
+		mine := !existed || prior.has(ev)
+		if len(groups) == 0 && mine {
 			continue
+		}
+		if mine {
+			next.events = append(next.events, ev)
 		}
 		if n > 0 {
 			hb.WriteByte(',')
@@ -381,12 +509,16 @@ func writeMerged(path, hooksAbs string, incoming map[string][]json.RawMessage, o
 		hb.WriteByte(']')
 	}
 	hb.WriteByte('}')
+	keepKey := n > 0 || (hadKey && !prior.key)
+	if !keepKey {
+		next = shells{}
+	}
 	// Rebuild the top level: same order, hooks replaced or appended / dropped.
 	var out []kv
 	placed := false
 	for _, m := range top {
 		if m.key == MergeKey {
-			if n > 0 {
+			if keepKey {
 				out = append(out, kv{key: MergeKey, raw: hb.Bytes()})
 			}
 			placed = true
@@ -394,7 +526,7 @@ func writeMerged(path, hooksAbs string, incoming map[string][]json.RawMessage, o
 		}
 		out = append(out, m)
 	}
-	if !placed && n > 0 {
+	if !placed && keepKey {
 		out = append(out, kv{key: MergeKey, raw: hb.Bytes()})
 	}
 	var tb bytes.Buffer
@@ -411,10 +543,10 @@ func writeMerged(path, hooksAbs string, incoming map[string][]json.RawMessage, o
 	tb.WriteByte('}')
 	var pretty bytes.Buffer
 	if err := json.Indent(&pretty, tb.Bytes(), "", "  "); err != nil {
-		return err
+		return prior, err
 	}
 	pretty.WriteByte('\n')
-	return atomicWrite(path, pretty.Bytes())
+	return next, atomicWrite(path, pretty.Bytes())
 }
 
 // atomicWrite writes via a temp file in the same directory and renames it
@@ -452,18 +584,34 @@ func atomicWrite(path string, data []byte) error {
 	return nil
 }
 
-// RemoveMerge strips agsy groups from every merge target (clean). A file
-// agsy created that becomes empty is deleted; otherwise it is written back
-// without agsy's groups. Invalid targets are skipped and reported.
+// RemoveMerge strips agsy groups from every merge target (clean), including
+// orphaned targets an earlier apply recorded that the config no longer
+// names. A file agsy created that becomes empty is deleted; otherwise it is
+// written back without agsy's groups. Files holding nothing of agsy's are
+// not touched. Invalid targets are skipped and reported.
 func RemoveMerge(cfg *config.Config, records []build.MergeRecord) (cleaned, deleted, skipped []string, err error) {
 	plans, err := InspectMerge(cfg, records)
 	if err != nil {
 		return nil, nil, nil, err
 	}
-	hooksAbs := filepath.Join(cfg.OutDir(), filepath.FromSlash(cfg.Build.Categories["hooks"].To))
+	prefixes := ownerPrefixes(cfg, records)
+	strip := func(path string, created bool) error {
+		if _, e := writeMerged(path, prefixes, nil, nil, shellsOf(findRecord(records, path))); e != nil {
+			return e
+		}
+		if created && isEmptyObject(path) {
+			if e := os.Remove(path); e == nil {
+				deleted = append(deleted, path)
+				removeIfEmpty(filepath.Dir(path))
+				return nil
+			}
+		}
+		cleaned = append(cleaned, path)
+		return nil
+	}
 	for _, p := range plans {
 		switch p.State {
-		case MergeMissing:
+		case MergeMissing, MergeIdle:
 			continue
 		case MergeInvalid:
 			skipped = append(skipped, p.FilePath)
@@ -477,17 +625,22 @@ func RemoveMerge(cfg *config.Config, records []build.MergeRecord) (cleaned, dele
 			}
 			continue
 		}
-		if e := writeMerged(p.FilePath, hooksAbs, nil, nil); e != nil {
+		if e := strip(p.FilePath, p.Created); e != nil {
 			return cleaned, deleted, skipped, e
 		}
-		if p.Created && isEmptyObject(p.FilePath) {
-			if e := os.Remove(p.FilePath); e == nil {
-				deleted = append(deleted, p.FilePath)
-				removeIfEmpty(filepath.Dir(p.FilePath))
-				continue
-			}
+	}
+	orphans, err := MergeOrphans(cfg, records)
+	if err != nil {
+		return cleaned, deleted, skipped, err
+	}
+	for _, o := range orphans {
+		created := false
+		if rec := findRecord(records, o); rec != nil {
+			created = rec.Created
 		}
-		cleaned = append(cleaned, p.FilePath)
+		if e := strip(o, created); e != nil {
+			return cleaned, deleted, skipped, e
+		}
 	}
 	return cleaned, deleted, skipped, nil
 }

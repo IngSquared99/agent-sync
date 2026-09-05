@@ -210,7 +210,7 @@ func cmdApply() int {
 		return errExit(err)
 	}
 	if len(merges) > 0 {
-		recs, err := mount.ApplyMerge(cfg, merges)
+		recs, err := mount.ApplyMerge(cfg, merges, oldMerges)
 		if err != nil {
 			fmt.Println("✘", err)
 			fmt.Printf(i18n.T("(build finished, %s/ and links are intact; only the merge step is incomplete — fix the issue and rerun agsy apply)\n"), cfg.Build.Out)
@@ -218,7 +218,26 @@ func cmdApply() int {
 		}
 		newM.Merges = recs
 		for _, mp := range merges {
+			if mp.State == mount.MergeIdle {
+				fmt.Printf(i18n.T("✔ merge skipped: %s (no hook entries to merge, file untouched)\n"), filepath.Join(mp.Dir, mp.Name))
+				continue
+			}
 			fmt.Printf(i18n.T("✔ merge done: %s ← %s\n"), filepath.Join(mp.Dir, mp.Name), filepath.Base(mp.Registry))
+		}
+	}
+	// Merge targets of an earlier apply that this config no longer names keep
+	// their record (so status keeps reporting them and clean can strip them)
+	// and are listed below with the orphaned links.
+	mergeOrphans, err := mount.MergeOrphans(cfg, oldMerges)
+	if err != nil {
+		return errExit(err)
+	}
+	for _, o := range mergeOrphans {
+		for _, r := range oldMerges {
+			if filepath.Clean(r.Path) == o {
+				newM.Merges = append(newM.Merges, r)
+				break
+			}
 		}
 	}
 
@@ -263,6 +282,13 @@ func cmdApply() int {
 			fmt.Println("  -", o)
 		}
 		fmt.Println(i18n.T("  Tools reading those directories still see old content. Delete them manually, or agsy clean removes them together with everything else agsy built."))
+	}
+	if len(mergeOrphans) > 0 {
+		fmt.Printf(i18n.T("⚠ %d files merged by a previous apply are no longer named by the current mount config but still hold agsy hook entries:\n"), len(mergeOrphans))
+		for _, o := range mergeOrphans {
+			fmt.Println("  -", o)
+		}
+		fmt.Println(i18n.T("  The tool keeps running those old hooks. Remove the entries by hand, or agsy clean strips them together with everything else agsy built."))
 	}
 	return 0
 }

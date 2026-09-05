@@ -126,6 +126,8 @@ agsy 絕不合併或覆蓋真實檔案：`init` 立即提醒、`apply` 拒絕執
 
 先前 apply 建立、之後你把該工具移出 mount 設定的連結。工具仍透過它讀舊內容，所以 status 持續提醒。`apply` 不會刪它們；手動移除，或 `agsy clean` 連同其他東西一起清。
 
+你從 mount 設定移除的 merge 目標（Claude Code 的 `settings.json`）也一樣：agsy 的條目還留在 `hooks` 鍵裡、工具照跑，所以 status 會把該檔列為孤兒，直到你手動移除條目或執行 `agsy clean`。
+
 ### Q24：agsy 會不會把來源裡符號連結指到的檔案（例如私鑰）複製出去？
 
 不會。掃描一律不收符號連結（含 skill 目錄內部——含連結的 skill 整個略過），複製階段還有第二道防線直接拒絕。產物會被掛載給所有工具讀，連結絕不能夾帶來源以外的檔案。
@@ -158,7 +160,7 @@ Codex、Antigravity、Cursor 都有獨立的 `hooks.json`，整檔交給 agsy �
 
 ### Q31：Windows 上腳本跑不起來？
 
-agsy 保證登記表正確（含路徑跳脫），但 `.sh` 在 Windows 不能直接執行。在 `hook.yaml` 用 `command: python3 ./check.py` 這種指定直譯器的寫法，或用 `overrides.codex.hooks[0].commandWindows` 之類各家自己的欄位。
+agsy 保證登記表正確（路徑為絕對路徑，含空白或 shell 特殊字元時會加引號），但 `.sh` 在 Windows 不能直接執行。在 `hook.yaml` 用 `command: python3 ./check.py` 這種指定直譯器的寫法，或用 `overrides.codex.hooks[0].commandWindows` 之類各家自己的欄位。
 
 ### Q32：從 v0.1 升級，apply 說 `build.on_conflict.hooks 未設定`？
 

@@ -138,7 +138,7 @@ Read-only. Prints the same two lists apply confirms, plus mount health:
 
 - **List A** — sources → output: content changed / new / deleted (with "the item and its derived forms disappear after apply" flagged), plus missing outputs (deleted output copies; apply rebuilds them). "Source path missing" (repo not cloned, disk not mounted) is clearly separated from "file deleted".
 - **List B** — artifact side: everything the next apply will discard, each with its keep-guidance. There is no write-back: to keep a change, move or merge it into a source, then apply.
-- **Mounts**: per-link states (fine / missing / wrong target or broken / occupied / orphaned), and per merge target (in sync / agsy entries edited / entries gone / not a JSON object).
+- **Mounts**: per-link states (fine / missing / wrong target or broken / occupied / orphaned), and per merge target (in sync / nothing to merge / agsy entries edited / entries gone / not a JSON object / orphaned — merged by an earlier apply, no longer in the config, still holding agsy entries).
 - **Summary**: `source changes N │ artifact-side changes N │ missing outputs N │ mount anomalies N` plus the suggested next command.
 
 Exit code `0` = fully in sync; `1` = any gap. Suited to CI / git hooks; without a TTY only the report prints. In an interactive terminal with gaps present, an action menu can jump straight into apply.
@@ -147,7 +147,7 @@ Exit code `0` = fully in sync; `1` = any gap. Suited to CI / git hooks; without 
 
 ## `agsy clean`
 
-Uninstall: after confirmation, first strips agsy's hook entries out of the merge targets (`settings.json` is your file: only agsy's entries go, an emptied `hooks` key is dropped, the file itself is deleted only if agsy created it and it is now empty), then removes the mount links (the root `AGENTS.md` and the three `hooks.json` links included) and the whole output directory; **`agsy.yaml` is kept**. Only agsy-created things are deleted — real directories and files are skipped and reported; orphan links recorded in the manifest are removed too (each path verified to actually be a link into the output before touching it); mount directories left empty by link removal are also removed. `agsy apply` afterwards rebuilds everything.
+Uninstall: after confirmation, first strips agsy's hook entries out of the merge targets, orphaned ones included (`settings.json` is your file: only agsy's entries go, together with the `hooks` key and event arrays agsy itself introduced — yours stay even when empty; the file itself is deleted only if agsy created it and it is now empty; a file holding nothing of agsy's is not touched), then removes the mount links (the root `AGENTS.md` and the three `hooks.json` links included) and the whole output directory; **`agsy.yaml` is kept**. Only agsy-created things are deleted — real directories and files are skipped and reported; orphan links recorded in the manifest are removed too (each path verified to actually be a link into the output before touching it); mount directories left empty by link removal are also removed. `agsy apply` afterwards rebuilds everything.
 
 ---
 

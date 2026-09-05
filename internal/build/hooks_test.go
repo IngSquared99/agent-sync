@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -253,8 +254,8 @@ func TestHookVendorGapsAreNotesNotErrors(t *testing.T) {
 	if hs[1].(map[string]interface{})["statusMessage"] != "agsy:greet" {
 		t.Errorf("non-command handler must carry the owner mark: %v", hs[1])
 	}
-	if _, has := hs[0].(map[string]interface{})["statusMessage"]; has {
-		t.Error("command handlers need no owner mark")
+	if hs[0].(map[string]interface{})["statusMessage"] != "agsy:greet" {
+		t.Errorf("command handlers carry the owner mark too (the merge target must recognise them after the project moved): %v", hs[0])
 	}
 	cx := readJSON(t, filepath.Join(cfg.OutDir(), "hooks.codex.json"))
 	hs = cx["hooks"].(map[string]interface{})["SessionStart"].([]interface{})[0].(map[string]interface{})["hooks"].([]interface{})
@@ -616,5 +617,70 @@ func TestHookIgnoredEntriesAreReported(t *testing.T) {
 	}
 	if _, has := reasons[".hidden"]; has {
 		t.Error("hidden entries are skipped silently")
+	}
+}
+
+// rewriteCommand keeps everything but ./ tokens byte for byte and quotes a
+// rewritten path only when the shell would otherwise split or interpret it.
+func TestRewriteCommandQuoting(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("POSIX quoting")
+	}
+	plain := "/p/.agsy/hooks/h"
+	if got := rewriteCommand("python3  ./check.py --fast", plain); got != "python3  /p/.agsy/hooks/h/check.py --fast" {
+		t.Errorf("plain: %q", got)
+	}
+	odd := "/My Projects/a | b/.agsy/hooks/it's"
+	got := rewriteCommand("./run.sh ./x", odd)
+	want := `'/My Projects/a | b/.agsy/hooks/it'\''s/run.sh' '/My Projects/a | b/.agsy/hooks/it'\''s/x'`
+	if got != want {
+		t.Errorf("quoted:\n got %q\nwant %q", got, want)
+	}
+	if toks := splitCommand(got); len(toks) != 2 || toks[0] != odd+"/run.sh" || toks[1] != odd+"/x" {
+		t.Errorf("splitCommand must undo the quoting: %q", toks)
+	}
+	if toks := splitCommand(`python3 "/a b/c.py" --x 'y z'`); len(toks) != 4 || toks[1] != "/a b/c.py" || toks[3] != "y z" {
+		t.Errorf("splitCommand: %q", toks)
+	}
+	if got := rewriteCommand("./x", ""); got != "./x" {
+		t.Errorf("empty dir must not rewrite: %q", got)
+	}
+}
+
+// An override that switches a handler's type away from command drops the
+// now meaningless command field and says so; an override replacing the
+// command with a missing script is refused like the main handler's.
+func TestHookOverrideTypeAndMissingScript(t *testing.T) {
+	cfg, lib := setupHooks(t, "error")
+	writeFile(t, filepath.Join(lib, "hooks", "flip", "hook.yaml"), "events:\n  Stop:\n    - hooks: [{command: ./x}]\n      overrides: {claude: {hooks: [{type: prompt, prompt: check}]}}\n")
+	writeFile(t, filepath.Join(lib, "hooks", "flip", "x"), "")
+	writeFile(t, filepath.Join(lib, "hooks", "ovmiss", "hook.yaml"), "events:\n  Stop:\n    - hooks: [{command: ./x}]\n      overrides: {codex: {hooks: [{command: ./gone.sh}]}}\n")
+	writeFile(t, filepath.Join(lib, "hooks", "ovmiss", "x"), "")
+	p := compute(t, cfg)
+	var flip Item
+	for _, it := range p.Items {
+		if it.Name == "flip" {
+			flip = it
+		}
+	}
+	if !strings.Contains(flip.RouteNote, `is of type "prompt" for claude; its command field is dropped`) {
+		t.Errorf("note: %q", flip.RouteNote)
+	}
+	found := false
+	for _, e := range p.RouteErrors {
+		if strings.Contains(e, "ovmiss") && strings.Contains(e, "./gone.sh") {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("override with a missing script must be a route error: %v", p.RouteErrors)
+	}
+	if got := HookScriptPaths(filepath.Join(lib, "hooks", "ovmiss")); len(got) != 2 || got[0] != "gone.sh" || got[1] != "x" {
+		t.Errorf("HookScriptPaths must include override commands: %v", got)
+	}
+	tr, _ := translateHook(flip.Hook, "flip", "claude", "/abs")
+	h := tr.events["Stop"][0].(orderedObj).vals["hooks"].([]interface{})[0].(orderedObj)
+	if _, has := h.vals["command"]; has || h.vals["type"] != "prompt" {
+		t.Errorf("command must be dropped on the flipped handler: %v", h.vals)
 	}
 }

@@ -213,6 +213,8 @@ func cmdDoctor() int {
 			fmt.Printf(i18n.T("  %-28s ✔ absent, apply creates it with the hook entries\n"), p)
 		case mount.MergeAbsent, mount.MergeClean, mount.MergeModified:
 			fmt.Printf(i18n.T("  %-28s ✔ JSON object, hook entries are merged into its \"hooks\" key\n"), p)
+		case mount.MergeIdle:
+			fmt.Printf(i18n.T("  %-28s ✔ no hook entries to merge; apply leaves it untouched\n"), p)
 		case mount.MergeInvalid:
 			fmt.Printf(i18n.T("  %-28s ⚠ %s; apply will fail, handle it manually\n"), p, mp.Note)
 			warns++
@@ -264,9 +266,17 @@ func cmdMenu() int {
 	if cfg, err := loadConfig(); err == nil {
 		if m, err := build.LoadManifest(cfg.OutDir()); err == nil {
 			if rep, err := state.Collect(cfg, m); err == nil {
+				// Same arithmetic as status: edited merge entries are
+				// artifact-side changes, merge gaps are mount issues.
+				modifiedMerges := 0
+				for _, mp := range rep.Merges {
+					if mp.State == mount.MergeModified {
+						modifiedMerges++
+					}
+				}
 				summary = fmt.Sprintf(i18n.T("  Status: source changes %d │ artifact-side changes %d │ missing outputs %d │ mount issues %d\n"),
-					len(rep.SourceChanges)+len(rep.News), len(rep.Artifacts), len(rep.Gone), rep.LinkBad)
-				localN = len(rep.Artifacts)
+					len(rep.SourceChanges)+len(rep.News), len(rep.Artifacts)+modifiedMerges, len(rep.Gone), rep.LinkBad+rep.MergeBad)
+				localN = len(rep.Artifacts) + modifiedMerges
 			}
 		} else if os.IsNotExist(err) {
 			summary = i18n.T("  Status: not built yet (run plan to preview, then apply)\n")
