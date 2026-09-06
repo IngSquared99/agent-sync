@@ -211,7 +211,7 @@ func cmdDoctor() int {
 		switch mp.State {
 		case mount.MergeMissing:
 			fmt.Printf(i18n.T("  %-28s ✔ absent, apply creates it with the hook entries\n"), p)
-		case mount.MergeAbsent, mount.MergeClean, mount.MergeModified:
+		case mount.MergeAbsent, mount.MergeClean, mount.MergeModified, mount.MergeStale:
 			fmt.Printf(i18n.T("  %-28s ✔ JSON object, hook entries are merged into its \"hooks\" key\n"), p)
 		case mount.MergeIdle:
 			fmt.Printf(i18n.T("  %-28s ✔ no hook entries to merge; apply leaves it untouched\n"), p)
@@ -266,8 +266,8 @@ func cmdMenu() int {
 	if cfg, err := loadConfig(); err == nil {
 		if m, err := build.LoadManifest(cfg.OutDir()); err == nil {
 			if rep, err := state.Collect(cfg, m); err == nil {
-				// Same arithmetic as status: edited merge entries are
-				// artifact-side changes, merge gaps are mount issues.
+				// Same arithmetic as status: edited merge entries count as
+				// artifact-side changes, merge gaps as mount issues.
 				modifiedMerges := 0
 				for _, mp := range rep.Merges {
 					if mp.State == mount.MergeModified {

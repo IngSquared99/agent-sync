@@ -32,11 +32,10 @@ import (
 // HookFile is the declaration file every hook directory must contain.
 const HookFile = "hook.yaml"
 
-// OwnerMark prefixes the statusMessage agsy sets on every handler it writes
-// for a merged dialect (Claude Code), unless the hook.yaml already set one.
-// A merge target recognises its groups by this mark first and by a command
-// path into the output second (see mount.ownsGroup): the mark survives a
-// moved project or a renamed build.out, the path does not.
+// OwnerMark prefixes the statusMessage set on every handler written for a
+// merged dialect (Claude Code) when hook.yaml sets none. mount.ownsGroup
+// identifies agsy groups by this mark or by a command path into the output
+// hooks directory; the mark is path-independent.
 const OwnerMark = "agsy:"
 
 // HookSpec is the parsed hook.yaml.
@@ -86,7 +85,7 @@ type dialect struct {
 	shape      hookShape
 	matcherOn  map[string]bool // named shape: events that honor a matcher (nil = all)
 	flatFields map[string]bool // flat shape: handler fields carried over besides command/matcher
-	ownerMark  bool            // registry is merged into a user file: mark every handler agsy writes
+	ownerMark  bool            // registry is merged into a user file: every handler gets OwnerMark
 }
 
 func same(names ...string) map[string]string {
@@ -312,8 +311,8 @@ func resolveHooks(cfg *config.Config, p *Plan) {
 		}
 		// Every ./ path a command refers to must exist in the hook directory:
 		// a registry pointing at a missing script would fail at the worst
-		// moment (inside the tool), so it fails here instead. Overrides can
-		// replace the command per tool, so their commands are checked too.
+		// moment (inside the tool), so it fails here instead. Override
+		// commands are checked as well.
 		missing := ""
 		for _, c := range commandsOf(spec) {
 			for _, tok := range splitCommand(c) {
@@ -346,8 +345,8 @@ func resolveHooks(cfg *config.Config, p *Plan) {
 				continue
 			}
 			if !HasHookDialect(tool) {
-				// build.tools is an open list; a tool agsy cannot write a
-				// registry for silently receives nothing, so say so.
+				// build.tools is an open list; a tool without a dialect gets
+				// no registry, which plan reports.
 				noDialect = append(noDialect, tool)
 				continue
 			}
@@ -366,8 +365,8 @@ func resolveHooks(cfg *config.Config, p *Plan) {
 	}
 }
 
-// commandsOf lists every command string a hook may execute: the handlers of
-// each group plus every per-tool override that replaces a command. Order is
+// commandsOf lists every command string of a hook: the handlers of each
+// group plus every per-tool override that replaces a command. Order is
 // deterministic (events in genericEvents order, tools sorted).
 func commandsOf(spec *HookSpec) []string {
 	var out []string
@@ -411,8 +410,8 @@ func commandsOf(spec *HookSpec) []string {
 // HookScriptPaths lists the ./ paths that command handlers execute directly
 // (the first token of the command, relative to the hook directory), for
 // doctor's executable-bit check. Paths passed to an interpreter are not
-// listed. Overrides that replace the command count as well. A broken
-// hook.yaml yields nothing; plan reports it.
+// listed. Override commands are included. A broken hook.yaml yields
+// nothing; plan reports it.
 func HookScriptPaths(hookDir string) []string {
 	spec, err := parseHookSpec(filepath.Join(hookDir, HookFile))
 	if err != nil || spec == nil {
@@ -488,18 +487,15 @@ func translateHook(spec *HookSpec, name, tool, absHookDir string) (translated, [
 					c, _ := h["command"].(string)
 					h["command"] = rewriteCommand(c, absHookDir)
 				} else if _, has := h["command"]; has {
-					// An override switched the type away from command (or the
-					// source mixed the two): the command field would be
-					// meaningless to the vendor, so it is dropped, audibly.
+					// Non-command handler carrying a command field (type
+					// changed by an override): the field is dropped, with a note.
 					delete(h, "command")
 					notes = append(notes, fmt.Sprintf(i18n.T("%s: handler %d of %s is of type %q for %s; its command field is dropped there"), name, hi+1, ev, typ, tool))
 				}
 				if d.ownerMark {
-					// The registry is merged into a user-owned file; every
-					// handler agsy writes carries the display-only statusMessage
-					// with the OwnerMark prefix so mount.ownsGroup can tell
-					// agsy's groups from the user's even after the project moved.
-					// A statusMessage set in hook.yaml is the user's and stays.
+					// Merged registry: every handler carries the display-only
+					// statusMessage with the OwnerMark prefix (see
+					// mount.ownsGroup). A statusMessage from hook.yaml is kept.
 					if _, has := h["statusMessage"]; !has {
 						h["statusMessage"] = OwnerMark + name
 					}
@@ -565,11 +561,10 @@ func cloneHandler(h map[string]interface{}) map[string]interface{} {
 }
 
 // rewriteCommand replaces every whitespace-separated token starting with ./
-// by the absolute path inside absHookDir. Only ./ tokens are touched and the
-// rest of the string (other tokens, spacing) is kept byte for byte: the rule
-// stays predictable and documentable ("python3 ./check.py" works). The
-// vendor hands the command to a shell, so a rewritten path is quoted when it
-// needs to be (spaces, |, &, …): a project under "My Projects/" must work.
+// by the absolute path inside absHookDir. Only ./ tokens are touched; the
+// rest of the string (other tokens, spacing) is kept as is ("python3
+// ./check.py" works). The vendor runs the command through a shell, so a
+// rewritten path is quoted when it contains spaces or shell metacharacters.
 func rewriteCommand(cmd, absHookDir string) string {
 	if absHookDir == "" {
 		return cmd
@@ -598,10 +593,9 @@ func rewriteCommand(cmd, absHookDir string) string {
 
 func isSpace(c byte) bool { return c == ' ' || c == '\t' || c == '\n' || c == '\r' }
 
-// shellQuote quotes p for the shell the vendor runs commands with when p
-// contains anything beyond the plain path character set. On Windows
-// (cmd.exe / PowerShell) that is double quotes; elsewhere single quotes, the
-// POSIX form that needs no escaping except for a literal single quote.
+// shellQuote quotes p when it contains anything beyond the plain path
+// character set: double quotes on Windows (cmd.exe / PowerShell), POSIX
+// single quotes elsewhere (only a literal single quote needs escaping).
 func shellQuote(p string) string {
 	if !needsQuote(p) {
 		return p
@@ -624,11 +618,10 @@ func needsQuote(p string) bool {
 	return false
 }
 
-// splitCommand splits a command string into tokens the way a shell would
-// see them as far as quoting goes: single- and double-quoted runs stay one
-// token with the quotes removed, so a path rewritten by rewriteCommand comes
-// back as the plain path. Used to recognise agsy's own paths in a registry
-// and to check ./ references in a hook.yaml.
+// splitCommand splits a command string into tokens with shell quoting
+// applied: single- and double-quoted runs stay one token, quotes removed, so
+// a path written by rewriteCommand comes back as the plain path. Used for
+// the ownership check of a registry and for ./ references in a hook.yaml.
 func splitCommand(cmd string) []string {
 	var out []string
 	var cur strings.Builder
@@ -650,8 +643,8 @@ func splitCommand(cmd string) []string {
 			quote = c
 			inTok = true
 		case c == '\\' && runtime.GOOS != "windows" && i+1 < len(cmd) && !isSpace(cmd[i+1]):
-			// POSIX escape outside quotes ('\'' inside a single-quoted path);
-			// on Windows a backslash is a path separator, never an escape.
+			// POSIX escape outside quotes ('\'' inside a single-quoted path).
+			// On Windows a backslash is a path separator.
 			cur.WriteByte(cmd[i+1])
 			i++
 			inTok = true
@@ -672,7 +665,7 @@ func splitCommand(cmd string) []string {
 	return out
 }
 
-// SplitCommand is splitCommand for other packages (mount's ownership check).
+// SplitCommand exports splitCommand for mount's ownership check.
 func SplitCommand(cmd string) []string { return splitCommand(cmd) }
 
 // orderedObj is a JSON object with a fixed key order (encoding/json sorts map

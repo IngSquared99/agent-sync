@@ -14,10 +14,9 @@ import (
 	"github.com/IngSquared99/agent-sync/internal/state"
 )
 
-// Regression tests for the hooks category, end to end through the commands:
-// a project path with shell metacharacters, clean leaving idle merge targets
-// alone, a renamed build.out or a moved project, overrides pointing at
-// missing scripts, and merge targets dropped from the config.
+// Hooks category, end to end through the commands: a project path with
+// shell metacharacters, idle merge targets, a renamed build.out or a moved
+// project, override commands, orphaned merge targets, target notes.
 
 // hookProjectAt builds a project (rules + one command hook) under sub inside
 // a fresh temp dir, so the project path can carry spaces and metacharacters.
@@ -62,8 +61,8 @@ func firstCommand(t *testing.T, registry string) string {
 	return doc.Hooks["PreToolUse"][0].Hooks[0].Command
 }
 
-// The vendor hands the command to a shell: a project directory with a space
-// or a pipe in its name must still run the script.
+// The registry command runs through a shell: a project directory with a
+// space or a pipe in its name still runs the script.
 func TestHooksPathWithShellMetacharacters(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("POSIX shell check")
@@ -83,8 +82,8 @@ func TestHooksPathWithShellMetacharacters(t *testing.T) {
 	if _, err := os.Stat(mark); err != nil {
 		t.Error("the hook script did not run")
 	}
-	// The merge target recognises the quoted path as its own: a second apply
-	// replaces the group instead of duplicating it, and status is clean.
+	// The quoted path is recognised as agsy's: a second apply replaces the
+	// group, status is clean.
 	if code := cmdApply(); code != 0 {
 		t.Fatal("second apply failed")
 	}
@@ -97,7 +96,7 @@ func TestHooksPathWithShellMetacharacters(t *testing.T) {
 	}
 }
 
-// A plain path stays unquoted, so registries of the common case read as before.
+// A plain path stays unquoted.
 func TestHooksPlainPathUnquoted(t *testing.T) {
 	proj := hookProjectAt(t, "plain")
 	initAndApply(t, proj)
@@ -107,8 +106,7 @@ func TestHooksPlainPathUnquoted(t *testing.T) {
 	}
 }
 
-// With no hooks at all, neither apply nor clean creates or rewrites the
-// merge target.
+// With no hooks, neither apply nor clean creates or rewrites the merge target.
 func TestCleanLeavesIdleMergeTargetAlone(t *testing.T) {
 	proj := newProject(t)
 	chdir(t, proj)
@@ -148,8 +146,8 @@ func TestCleanLeavesIdleMergeTargetAlone(t *testing.T) {
 	}
 }
 
-// A renamed build.out must not leave the previous apply's groups behind as
-// if they were the user's: the owner mark identifies them regardless of path.
+// After build.out is renamed the owner mark still identifies the previous
+// groups; they are replaced, not kept.
 func TestHooksOutRenameReplacesOldGroups(t *testing.T) {
 	proj := hookProjectAt(t, "p")
 	initAndApply(t, proj)
@@ -167,8 +165,8 @@ func TestHooksOutRenameReplacesOldGroups(t *testing.T) {
 	}
 }
 
-// A moved project: the old absolute paths are stale, the owner mark still
-// says whose groups they are.
+// After the project is moved the old absolute paths are stale: status
+// reports it, the owner mark still identifies the groups, apply rewrites.
 func TestHooksMovedProjectReplacesOldGroups(t *testing.T) {
 	root := t.TempDir()
 	proj := filepath.Join(root, "before")
@@ -185,6 +183,9 @@ func TestHooksMovedProjectReplacesOldGroups(t *testing.T) {
 		t.Fatal(err)
 	}
 	chdir(t, moved)
+	if code := cmdStatus(false); code == 0 {
+		t.Error("status must report the stale merge entries after the move")
+	}
 	if code := cmdApply(); code != 0 {
 		t.Fatal("apply after move failed")
 	}
@@ -197,8 +198,8 @@ func TestHooksMovedProjectReplacesOldGroups(t *testing.T) {
 	}
 }
 
-// A statusMessage set in hook.yaml is the user's and is written verbatim
-// (ownership then rests on the command path alone).
+// A statusMessage set in hook.yaml is written verbatim; ownership then
+// rests on the command path.
 func TestHooksUserStatusMessageKept(t *testing.T) {
 	proj := hookProjectAt(t, "p")
 	write(t, filepath.Join(proj, "repo-ai-lib", "hooks", "block-rm", "hook.yaml"), `description: block rm
@@ -222,8 +223,8 @@ events:
 	}
 }
 
-// An override that replaces the command with a missing ./ script is caught
-// like a missing script in the main handler.
+// An override command pointing at a missing ./ script is refused like a
+// main handler's.
 func TestHooksOverrideMissingScriptRefused(t *testing.T) {
 	proj := hookProjectAt(t, "p")
 	write(t, filepath.Join(proj, "repo-ai-lib", "hooks", "block-rm", "hook.yaml"), `description: x
@@ -254,8 +255,8 @@ events:
 	}
 }
 
-// A merge target dropped from the mount config keeps feeding agsy's hooks to
-// the tool: status reports it, apply keeps the record, clean strips it.
+// A merge target dropped from the mount config: status reports it as an
+// orphan, apply keeps the record, clean strips it.
 func TestMergeOrphanReportedAndCleaned(t *testing.T) {
 	proj := hookProjectAt(t, "p")
 	initAndApply(t, proj)
@@ -303,8 +304,8 @@ func TestMergeOrphanReportedAndCleaned(t *testing.T) {
 	}
 }
 
-// A target: naming a tool that agsy cannot write a registry for is said
-// out loud by plan, and one leaving tools out names them.
+// target: naming a tool without a hook dialect, or leaving tools out, is
+// noted.
 func TestHooksTargetNotes(t *testing.T) {
 	proj := hookProjectAt(t, "p")
 	write(t, filepath.Join(proj, "repo-ai-lib", "hooks", "block-rm", "hook.yaml"), `target: [claude, gemini]
@@ -339,5 +340,46 @@ events:
 		if !strings.Contains(note, want) {
 			t.Errorf("note lacks %q: %q", want, note)
 		}
+	}
+}
+
+// A copied project carries the original's merge record; that path lies
+// outside the copy and is not an orphan of the copy.
+func TestMergeOrphanIgnoresPathsOutsideProject(t *testing.T) {
+	root := t.TempDir()
+	proj := filepath.Join(root, "orig")
+	if err := os.MkdirAll(proj, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	write(t, filepath.Join(proj, "repo-ai-lib", "rules", "python-style.md"), "# style\n")
+	write(t, filepath.Join(proj, "repo-ai-lib", "hooks", "block-rm", "hook.yaml"), e2eHook)
+	write(t, filepath.Join(proj, "repo-ai-lib", "hooks", "block-rm", "block-rm.sh"), "#!/bin/sh\nexit 2\n")
+	initAndApply(t, proj)
+	os.Chdir(root)
+	copyDir := filepath.Join(root, "copy")
+	if out, err := exec.Command("cp", "-R", proj, copyDir).CombinedOutput(); err != nil {
+		t.Skipf("cp -R unavailable: %v %s", err, out)
+	}
+	chdir(t, copyDir)
+	cfg, err := loadConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	m, err := build.LoadManifest(cfg.OutDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	rep, err := state.Collect(cfg, m)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rep.MergeOrphans) != 0 {
+		t.Errorf("the original's settings.json is not an orphan of the copy: %v", rep.MergeOrphans)
+	}
+	if code := cmdClean(); code != 0 {
+		t.Fatal("clean failed")
+	}
+	if !strings.Contains(read(t, filepath.Join(proj, ".claude", "settings.json")), "block-rm.sh") {
+		t.Error("clean in the copy must not touch the original's settings.json")
 	}
 }

@@ -166,8 +166,8 @@ func cmdPlan() int {
 	if err != nil {
 		return errExit(err)
 	}
-	// The manifest (when there is one) says what the last apply wrote, the
-	// same yardstick status uses; without it the registry file stands in.
+	// Merge states are judged against the manifest like status does; without
+	// one the registry file stands in.
 	var mergeRecs []build.MergeRecord
 	if m, err := build.LoadManifest(cfg.OutDir()); err == nil {
 		mergeRecs = m.Merges
@@ -193,6 +193,8 @@ func cmdPlan() int {
 				note = fmt.Sprintf(i18n.T("(merge into \"hooks\"; %d agsy entries present, will be refreshed)"), mp.Owned)
 			case mount.MergeIdle:
 				note = i18n.T("(no hook entries to merge; file untouched)")
+			case mount.MergeStale:
+				note = i18n.T("⚠ agsy entries point at a previous output path; apply updates them")
 			case mount.MergeModified:
 				note = i18n.T("⚠ agsy entries were modified — apply will ask before rebuilding them")
 			case mount.MergeInvalid:
