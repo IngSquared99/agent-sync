@@ -2,7 +2,7 @@
 // .claude/settings.json alongside user settings and therefore cannot be
 // linked as a whole file. agsy owns exactly the matcher groups under "hooks"
 // that carry the OwnerMark or whose command points into the output hooks
-// directory (current, or the one recorded by the previous apply); the
+// directory (the current one, or the one recorded in the manifest); the
 // criterion mirrors IsManagedLink. Every other top-level key and every
 // foreign group is preserved as is.
 package mount
@@ -39,6 +39,7 @@ const (
 	MergeAbsent                     // valid file, no agsy groups yet → apply adds them
 	MergeInvalid                    // symlink, not a regular file, or not a JSON object → apply refuses, clean skips
 	MergeIdle                       // nothing to merge and nothing of agsy's in the file (or no file) → apply and clean leave it alone
+	MergeStale                      // agsy groups present but their command paths point outside the current output (project moved, build.out renamed) → apply rewrites
 )
 
 // MergePlan describes one merge target (shared by plan / status / apply / clean).
@@ -51,7 +52,7 @@ type MergePlan struct {
 	State    MergeState
 	Created  bool   // per the manifest: the file was created by agsy
 	Owned    int    // agsy groups currently in the file
-	Note     string // explanation for Invalid / Modified
+	Note     string // explanation for Invalid / Modified / Stale
 }
 
 // kv is one top-level member of a JSON object, raw, in file order.
@@ -60,10 +61,10 @@ type kv struct {
 	raw json.RawMessage
 }
 
-// ownerPrefixes lists every output hooks directory whose paths mark a group
-// as agsy's: the current one plus those recorded by earlier applies (the
-// manifest is untrusted, but a prefix only widens what agsy claims as its
-// own to rewrite — never what it deletes outside the hooks key).
+// ownerPrefixes lists the output hooks directories whose paths mark a group
+// as agsy's: the current one plus those recorded in the manifest. The
+// manifest is untrusted; a prefix only widens which groups under the hooks
+// key are rewritten, nothing outside that key.
 func ownerPrefixes(cfg *config.Config, records []build.MergeRecord) []string {
 	cur := filepath.Join(cfg.OutDir(), filepath.FromSlash(cfg.Build.Categories["hooks"].To))
 	out := []string{cur}
@@ -86,7 +87,7 @@ func containsPath(list []string, p string) bool {
 
 // InspectMerge reports the state of every merge entry. records (from the
 // manifest, untrusted) only contribute the created flag, the hash of the
-// last write and the previous hooks directory; ownership is always
+// last write and the recorded hooks directory; ownership is always
 // re-derived from the file content.
 func InspectMerge(cfg *config.Config, records []build.MergeRecord) ([]MergePlan, error) {
 	out := cfg.OutDir()
@@ -134,7 +135,7 @@ func findRecord(records []build.MergeRecord, path string) *build.MergeRecord {
 func inspectMerge(mp *MergePlan, prefixes []string, rec *build.MergeRecord) {
 	// What the last apply wrote (or, before any apply, what the registry
 	// holds). An empty set means "nothing to merge": a missing file or a
-	// file without agsy groups is then Idle — the correct state, not a gap.
+	// file without agsy groups is then Idle, not a gap.
 	want := ""
 	if rec != nil {
 		want = rec.Hash
@@ -176,14 +177,44 @@ func inspectMerge(mp *MergePlan, prefixes []string, rec *build.MergeRecord) {
 	}
 	if want == "" || build.CanonicalHash(owned) == want {
 		mp.State = MergeClean
+		if hasStalePath(owned, prefixes[0]) {
+			mp.State = MergeStale
+			mp.Note = i18n.T("agsy entries point at a previous output path")
+		}
 		return
 	}
 	mp.State = MergeModified
 	mp.Note = i18n.T("agsy entries in the hooks key were modified")
 }
 
-// ownedGroups returns the agsy-owned groups of a merge target by event. The
-// error names what makes the file unusable as a merge target.
+// hasStalePath reports whether any owned command handler names an absolute
+// path outside cur, the current output hooks directory.
+func hasStalePath(owned map[string][]json.RawMessage, cur string) bool {
+	prefix := filepath.Clean(cur) + string(filepath.Separator)
+	for _, gs := range owned {
+		for _, g := range gs {
+			var x struct {
+				Hooks []struct {
+					Command string `json:"command"`
+				} `json:"hooks"`
+			}
+			if err := json.Unmarshal(g, &x); err != nil {
+				continue
+			}
+			for _, h := range x.Hooks {
+				for _, tok := range build.SplitCommand(h.Command) {
+					if filepath.IsAbs(tok) && !hasPathPrefix(tok, prefix) {
+						return true
+					}
+				}
+			}
+		}
+	}
+	return false
+}
+
+// ownedGroups returns the agsy-owned groups of a merge target by event. An
+// error means the file is not usable as a merge target.
 func ownedGroups(path string, prefixes []string) (map[string][]json.RawMessage, error) {
 	top, err := readTop(path)
 	if err != nil {
@@ -208,11 +239,12 @@ func ownedGroups(path string, prefixes []string) (map[string][]json.RawMessage, 
 	return owned, nil
 }
 
-// MergeOrphans lists files an earlier apply merged into that the current
-// mount config no longer names, and that still carry agsy groups. Like
-// orphaned links they are reported by status and cleared by clean, never
-// touched by apply. The record paths are untrusted: a file is listed only
-// when it verifiably holds agsy groups.
+// MergeOrphans lists recorded merge targets the mount config no longer
+// names that still hold agsy groups. Reported by status, stripped by clean,
+// never touched by apply (same rule as orphaned links). Record paths are
+// untrusted: only paths inside the project directory are considered (a
+// copied project must not reach into the original's files), and a file is
+// listed only when it verifiably holds agsy groups.
 func MergeOrphans(cfg *config.Config, records []build.MergeRecord) ([]string, error) {
 	plans, err := InspectMerge(cfg, records)
 	if err != nil {
@@ -223,11 +255,12 @@ func MergeOrphans(cfg *config.Config, records []build.MergeRecord) ([]string, er
 		current[filepath.Clean(p.FilePath)] = true
 	}
 	prefixes := ownerPrefixes(cfg, records)
+	base := filepath.Clean(cfg.BaseDir) + string(filepath.Separator)
 	var out []string
 	seen := map[string]bool{}
 	for _, r := range records {
 		p := filepath.Clean(r.Path)
-		if r.Key != MergeKey || current[p] || seen[p] {
+		if r.Key != MergeKey || current[p] || seen[p] || !hasPathPrefix(p, base) {
 			continue
 		}
 		seen[p] = true
@@ -326,8 +359,7 @@ func hooksOf(top []kv) ([]kv, error) {
 
 // ownsGroup reports whether a matcher group belongs to agsy: a handler
 // whose statusMessage carries build.OwnerMark, or a command handler whose
-// command names a path (quoted or not) inside one of the output hooks
-// directories.
+// command names a path (quoted or not) inside one of prefixes.
 func ownsGroup(group json.RawMessage, prefixes []string) bool {
 	var g struct {
 		Hooks []struct {
@@ -405,10 +437,9 @@ func ApplyMerge(cfg *config.Config, plans []MergePlan, records []build.MergeReco
 	return out, nil
 }
 
-// shells records which containers apply introduced into a merge target: the
-// "hooks" key itself and the event arrays. The manifest keeps them so a later
-// apply or clean removes exactly those when they run empty and leaves the
-// user's own (possibly empty) arrays and key alone.
+// shells names the containers apply introduced into a merge target: the
+// "hooks" key and event arrays. Kept in the manifest; apply and clean remove
+// exactly those when empty and leave pre-existing (possibly empty) ones.
 type shells struct {
 	key    bool
 	events []string
@@ -431,11 +462,10 @@ func (s shells) has(ev string) bool {
 }
 
 // writeMerged rewrites path with agsy groups replaced by incoming (nil =
-// remove all). What the user had stays: an event array or the "hooks" key
-// that was in the file before agsy touched it is kept even when removing
-// agsy's groups leaves it empty; containers agsy itself added (per prior)
-// are dropped again once empty. Returns the containers agsy is responsible
-// for after this write.
+// remove all). Pre-existing containers (event arrays, the "hooks" key) are
+// kept even when they end up empty; containers listed in prior are dropped
+// once empty. Returns the containers agsy is responsible for after the
+// write.
 func writeMerged(path string, prefixes []string, incoming map[string][]json.RawMessage, order []string, prior shells) (shells, error) {
 	top, err := readTop(path)
 	if err != nil && !os.IsNotExist(err) {
@@ -584,11 +614,10 @@ func atomicWrite(path string, data []byte) error {
 	return nil
 }
 
-// RemoveMerge strips agsy groups from every merge target (clean), including
-// orphaned targets an earlier apply recorded that the config no longer
-// names. A file agsy created that becomes empty is deleted; otherwise it is
-// written back without agsy's groups. Files holding nothing of agsy's are
-// not touched. Invalid targets are skipped and reported.
+// RemoveMerge strips agsy groups from every merge target (clean), orphaned
+// targets included. A file agsy created that becomes empty is deleted;
+// otherwise it is written back without agsy's groups. Idle targets are not
+// touched. Invalid targets are skipped and reported.
 func RemoveMerge(cfg *config.Config, records []build.MergeRecord) (cleaned, deleted, skipped []string, err error) {
 	plans, err := InspectMerge(cfg, records)
 	if err != nil {

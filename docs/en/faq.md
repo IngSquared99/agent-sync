@@ -126,7 +126,7 @@ Yes, by design:
 
 Links created by an earlier apply whose tool you later removed from the mount config. The tool keeps reading old content through them, so status keeps reminding you. `apply` never deletes them; remove them manually, or `agsy clean` clears them along with everything else.
 
-The same applies to a merge target (Claude Code's `settings.json`) you removed from the mount config: agsy's entries stay in the `hooks` key and the tool keeps running them, so status lists the file as an orphan until you remove the entries by hand or run `agsy clean`.
+A merge target (Claude Code's `settings.json`) removed from the mount config is reported the same way: agsy's entries remain in the `hooks` key until removed by hand or by `agsy clean`.
 
 ### Q24: Could agsy copy out files that symlinks in my sources point to (e.g. a private key)?
 

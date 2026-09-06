@@ -255,7 +255,7 @@ func TestHookVendorGapsAreNotesNotErrors(t *testing.T) {
 		t.Errorf("non-command handler must carry the owner mark: %v", hs[1])
 	}
 	if hs[0].(map[string]interface{})["statusMessage"] != "agsy:greet" {
-		t.Errorf("command handlers carry the owner mark too (the merge target must recognise them after the project moved): %v", hs[0])
+		t.Errorf("command handlers carry the owner mark: %v", hs[0])
 	}
 	cx := readJSON(t, filepath.Join(cfg.OutDir(), "hooks.codex.json"))
 	hs = cx["hooks"].(map[string]interface{})["SessionStart"].([]interface{})[0].(map[string]interface{})["hooks"].([]interface{})
@@ -620,8 +620,8 @@ func TestHookIgnoredEntriesAreReported(t *testing.T) {
 	}
 }
 
-// rewriteCommand keeps everything but ./ tokens byte for byte and quotes a
-// rewritten path only when the shell would otherwise split or interpret it.
+// rewriteCommand keeps everything but ./ tokens as is and quotes a rewritten
+// path only when it contains spaces or shell metacharacters.
 func TestRewriteCommandQuoting(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("POSIX quoting")
@@ -647,9 +647,9 @@ func TestRewriteCommandQuoting(t *testing.T) {
 	}
 }
 
-// An override that switches a handler's type away from command drops the
-// now meaningless command field and says so; an override replacing the
-// command with a missing script is refused like the main handler's.
+// An override changing a handler's type away from command drops the command
+// field with a note; an override command pointing at a missing script is a
+// route error.
 func TestHookOverrideTypeAndMissingScript(t *testing.T) {
 	cfg, lib := setupHooks(t, "error")
 	writeFile(t, filepath.Join(lib, "hooks", "flip", "hook.yaml"), "events:\n  Stop:\n    - hooks: [{command: ./x}]\n      overrides: {claude: {hooks: [{type: prompt, prompt: check}]}}\n")

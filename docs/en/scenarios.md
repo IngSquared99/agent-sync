@@ -83,9 +83,9 @@ The mount links themselves can misbehave — a problem of the "channel", not of 
 | you added your own group, changed permissions, model, other keys | not an anomaly | apply and clean preserve them verbatim |
 | agsy's entries were deleted, or the whole file | ✘ entries are missing | `agsy apply` restores them |
 | the file is not a JSON object (broken, an array) or is a symlink | ✘ apply refuses until fixed | fix by hand; clean skips it and says so |
-| the sources hold no hooks at all | nothing to merge ✔ | an absent file is not created; an existing one is not rewritten — neither by apply nor by clean |
-| you removed the `merge` entry from `agsy.yaml` | ⚠ orphan: still holds agsy entries | apply leaves it alone (and keeps reporting it); remove the entries by hand or let `agsy clean` strip them |
-| you moved the project or renamed `build.out` | in sync ✔ after `agsy apply` | the old groups are recognised by their `agsy:` mark and replaced, never duplicated |
+| the sources hold no hooks at all | nothing to merge ✔ | an absent file is not created; an existing one is not rewritten, by apply or by clean |
+| the `merge` entry was removed from `agsy.yaml` | ⚠ orphan: still holds agsy entries | apply leaves it alone and keeps reporting it; remove the entries by hand or run `agsy clean` |
+| the project was moved or `build.out` renamed | in sync ✔ after `agsy apply` | the old groups are recognised by the `agsy:` mark and replaced |
 
 ## Conditions that stop apply before the build starts
 

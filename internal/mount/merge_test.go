@@ -256,7 +256,7 @@ func TestOwnsGroup(t *testing.T) {
 		`5`: false,
 		`{"hooks":[{"type":"http","url":"http://x","statusMessage":"agsy:greet"}]}`: true,
 		`{"hooks":[{"type":"http","url":"http://x","statusMessage":"mine"}]}`:       false,
-		// a quoted path (project directory with a space) is still agsy's
+		// quoted path (project directory with a space)
 		`{"hooks":[{"command":` + jsonStr("'"+in+"'") + `}]}`:               true,
 		`{"hooks":[{"command":` + jsonStr("python3 \""+in+"\" --x") + `}]}`: true,
 	}
@@ -359,8 +359,7 @@ func TestMergeEmptyRegistryLeavesFileAlone(t *testing.T) {
 	if plans[0].State != MergeIdle {
 		t.Errorf("state = %v, want Idle", plans[0].State)
 	}
-	// clean must neither create the file nor rewrite it (it held nothing of
-	// agsy's): an Idle target is left alone in both directions.
+	// Idle target: clean neither creates nor rewrites the file.
 	cleaned, deleted, _, err := RemoveMerge(cfg, recs)
 	if err != nil {
 		t.Fatal(err)
@@ -407,9 +406,9 @@ func TestInspectMergeIgnoresForeignManifestRecords(t *testing.T) {
 	}
 }
 
-// Empty shells the user wrote survive: an event array that was empty
-// before agsy added to it is empty again after clean, and the "hooks" key
-// stays even when it ends up empty. Only a file agsy created goes away.
+// Pre-existing empty containers survive: an event array that was empty
+// before apply is empty again after clean, and the "hooks" key stays. Only
+// a file agsy created is deleted.
 func TestMergeKeepsUserEmptyShells(t *testing.T) {
 	cfg, settings, _ := setupMerge(t)
 	writeSettings(t, settings, `{"model":"opus","hooks":{"PreToolUse":[],"Stop":[]}}`)
@@ -437,7 +436,7 @@ func TestMergeKeepsUserEmptyShells(t *testing.T) {
 		t.Errorf("clean must restore the user's empty arrays: %s", doc["hooks"])
 	}
 
-	// Brought in by agsy alone: the file goes away with its shells.
+	// File created by apply: deleted by clean.
 	os.Remove(settings)
 	_, recs = applyOnce(t, cfg, nil)
 	if _, deleted, _, err := RemoveMerge(cfg, recs); err != nil || len(deleted) != 1 {
@@ -445,19 +444,21 @@ func TestMergeKeepsUserEmptyShells(t *testing.T) {
 	}
 }
 
-// Groups of an earlier apply whose command points into a previous output
-// directory (recorded in the manifest) are still agsy's.
+// Groups whose command points into the hooks directory recorded in the
+// manifest are agsy's.
 func TestMergeRecordedHooksDirStillOwned(t *testing.T) {
 	cfg, settings, _ := setupMerge(t)
 	old := filepath.Join(filepath.Dir(cfg.OutDir()), ".old-out", "hooks")
-	writeSettings(t, settings, `{"hooks":{"PreToolUse":[{"matcher":"Bash","hooks":[{"type":"command","command":`+jsonStr(filepath.Join(old, "block-rm", "block-rm.sh"))+`}]}]}}`)
-	recs := []build.MergeRecord{{Path: settings, Key: MergeKey, Hash: "stale", Created: false, HooksDir: old}}
+	group := `{"matcher":"Bash","hooks":[{"type":"command","command":` + jsonStr(filepath.Join(old, "block-rm", "block-rm.sh")) + `}]}`
+	writeSettings(t, settings, `{"hooks":{"PreToolUse":[`+group+`]}}`)
+	hash := build.CanonicalHash(map[string][]json.RawMessage{"PreToolUse": {json.RawMessage(group)}})
+	recs := []build.MergeRecord{{Path: settings, Key: MergeKey, Hash: hash, Created: false, HooksDir: old}}
 	plans, err := InspectMerge(cfg, recs)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if plans[0].Owned != 1 {
-		t.Fatalf("group under the recorded hooks dir must be owned, got %d", plans[0].Owned)
+	if plans[0].Owned != 1 || plans[0].State != MergeStale {
+		t.Fatalf("group under the recorded hooks dir must be owned and stale, got owned=%d state=%v", plans[0].Owned, plans[0].State)
 	}
 	_, recs = applyOnce(t, cfg, recs)
 	raw, _ := os.ReadFile(settings)
@@ -469,8 +470,8 @@ func TestMergeRecordedHooksDirStillOwned(t *testing.T) {
 	}
 }
 
-// When the registry moves a hook to another event, the event array apply
-// itself introduced last time does not linger as an empty shell.
+// When a hook moves to another event, the event array apply introduced
+// earlier is removed once empty.
 func TestMergeDropsOwnEmptyEventOnChange(t *testing.T) {
 	cfg, settings, script := setupMerge(t)
 	writeSettings(t, settings, `{"model":"opus"}`)

@@ -262,7 +262,7 @@ func Collect(cfg *config.Config, m *build.Manifest) (*Report, error) {
 		}
 	}
 	// Same rule as orphaned links: a merge target dropped from the config
-	// keeps feeding agsy's old hooks to the tool until someone removes them.
+	// still holds agsy's entries until clean or a manual edit removes them.
 	orphans, err := mount.MergeOrphans(cfg, m.Merges)
 	if err != nil {
 		return nil, err
