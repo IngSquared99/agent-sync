@@ -225,9 +225,8 @@ func cmdApply() int {
 			fmt.Printf(i18n.T("✔ merge done: %s ← %s\n"), filepath.Join(mp.Dir, mp.Name), filepath.Base(mp.Registry))
 		}
 	}
-	// Merge targets of an earlier apply that this config no longer names keep
-	// their record (so status keeps reporting them and clean can strip them)
-	// and are listed below with the orphaned links.
+	// Orphaned merge targets keep their record (status keeps reporting them,
+	// clean strips them) and are listed below with the orphaned links.
 	mergeOrphans, err := mount.MergeOrphans(cfg, oldMerges)
 	if err != nil {
 		return errExit(err)

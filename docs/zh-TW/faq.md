@@ -126,7 +126,7 @@ agsy 絕不合併或覆蓋真實檔案：`init` 立即提醒、`apply` 拒絕執
 
 先前 apply 建立、之後你把該工具移出 mount 設定的連結。工具仍透過它讀舊內容，所以 status 持續提醒。`apply` 不會刪它們；手動移除，或 `agsy clean` 連同其他東西一起清。
 
-你從 mount 設定移除的 merge 目標（Claude Code 的 `settings.json`）也一樣：agsy 的條目還留在 `hooks` 鍵裡、工具照跑，所以 status 會把該檔列為孤兒，直到你手動移除條目或執行 `agsy clean`。
+從 mount 設定移除的 merge 目標（Claude Code 的 `settings.json`）回報方式相同：agsy 的條目仍在 `hooks` 鍵裡，直到手動移除或執行 `agsy clean`。
 
 ### Q24：agsy 會不會把來源裡符號連結指到的檔案（例如私鑰）複製出去？
 

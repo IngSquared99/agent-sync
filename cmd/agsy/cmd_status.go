@@ -142,6 +142,8 @@ func cmdStatus(withMenu bool) int {
 			fmt.Printf(i18n.T("%s ⇐ %s   merged, %d agsy entries in sync ✔\n"), target, filepath.Base(mp.Registry), mp.Owned)
 		case mount.MergeIdle:
 			fmt.Printf(i18n.T("%s ⇐ %s   no hook entries to merge, file untouched ✔\n"), target, filepath.Base(mp.Registry))
+		case mount.MergeStale:
+			fmt.Printf(i18n.T("%s ⇐ %s   ✘ agsy entries point at a previous output path (project moved or build.out renamed; apply updates them)\n"), target, filepath.Base(mp.Registry))
 		case mount.MergeModified:
 			fmt.Printf(i18n.T("%s ⇐ %s   ⚠ agsy entries in the \"hooks\" key were modified (listed above; apply rebuilds them)\n"), target, filepath.Base(mp.Registry))
 		case mount.MergeMissing, mount.MergeAbsent:

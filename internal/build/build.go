@@ -108,12 +108,12 @@ type MergeRecord struct {
 	Hash    string `json:"hash"`    // canonical hash of the agsy-owned entries written
 	Created bool   `json:"created"` // the file did not exist before apply created it
 	// HooksDir is the absolute output hooks directory the written command
-	// paths pointed into. After build.out is renamed it lets inspect still
-	// recognise the groups of the previous apply by their old path.
+	// paths point into; inspect accepts it as an ownership prefix alongside
+	// the current one (build.out renamed since).
 	HooksDir string `json:"hooksDir,omitempty"`
-	// AddedKey and AddedEvents record which shells apply itself introduced
-	// (the "hooks" key, event arrays): those are removed again when empty,
-	// while shells the user wrote are kept even when empty.
+	// AddedKey and AddedEvents name the containers apply introduced (the
+	// "hooks" key, event arrays). Those are removed when empty; containers
+	// present before are kept even when empty.
 	AddedKey    bool     `json:"addedKey,omitempty"`
 	AddedEvents []string `json:"addedEvents,omitempty"`
 }
