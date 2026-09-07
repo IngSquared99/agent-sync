@@ -3,159 +3,166 @@
 ## 總覽
 
 ```
-agsy                        互動選單（附狀態摘要）
-agsy init [sources...]      產生／編輯 agsy.yaml
+agsy                        選單（附狀態摘要）
+agsy init [sources...]      產生或編輯 agsy.yaml
 agsy doctor                 環境健檢（唯讀）
-agsy plan                   預覽 build 與 mount 的結果（唯讀）
-agsy apply                  前置檢查 → 確認 → 清空重建 → 掛載
-agsy status                 以兩張清單回報落差（唯讀；exit 0=一致 1=有落差）
-agsy clean                  移除連結與產物（反安裝）
-agsy version                版本資訊
-agsy help                   使用說明
+agsy plan                   預覽 apply 會做的事（唯讀）
+agsy apply                  檢查 → 確認 → 重建產物 → 掛載
+agsy status                 回報落差（唯讀；結束碼 0 = 一致，1 = 有落差）
+agsy clean                  移除連結與產物
+agsy version                版本
+agsy help                   用法
 ```
 
-**全域旗標** `--yes` / `-y`：把所有確認一律視為 yes。給 CI、腳本、git hook 用；未指定時，非互動環境中需要確認的動作一律**取消、絕不強行執行**。
-
-**共通行為**：
-
-- 除了 `init`（只看目前目錄），每個指令都會**向上**尋找 `agsy.yaml`（與 git 同慣例），從專案子目錄執行也可以。
-- 介面語言依 `AGSY_LANG` / `LC_ALL` / `LANG`（`zh*` → 繁體中文）。
-- Windows 上雙擊執行時，agsy 會在視窗關閉前暫停，讓輸出留得住。
-- `apply`、`clean`、`init` 以鎖定檔（`agsy.yaml` 旁的 `.agsy.lock`）防止同一專案並發執行，指令結束即自動移除。期間啟動的第二個執行會回報鎖定並結束；殘留超過 15 分鐘的鎖（例如程式當掉留下）會被自動接管。
-
-各情境的建議節奏：
+什麼時候用哪個：
 
 ```
-第一次              init → doctor → plan → apply
-改了來源            (plan) → apply
-AI 改了掛載中的檔案  status → 把值得留的搬進來源 → apply
-不確定              status
-移除                clean
+ 第一次用             init → doctor → plan → apply
+ 改了來源             apply（不放心先 plan）
+ AI 改了掛載中的檔案   status → 把要留的搬進來源 → apply
+ 不確定現況           status
+ 不再用 agsy          clean
 ```
 
----
+所有指令共通：
 
-## `agsy`（互動選單）
+- 除了 `init`（只看目前資料夾），每個指令都會往上層找 `agsy.yaml`，從專案的子資料夾執行也可以。
+- `--yes`（或 `-y`）：所有確認一律當作「是」。給 CI、腳本、git hook 用。沒加時，在無法回答的環境（沒有終端機）遇到需要確認的動作一律取消。
+- 介面語言依 `AGSY_LANG` / `LC_ALL` / `LANG` 判斷，見[安裝](install.md)。
+- Windows 上雙擊執行時，視窗關閉前會暫停，讓輸出留得住。
+- `apply`、`clean`、`init` 執行期間會在 `agsy.yaml` 旁建一個 `.agsy.lock`，防止同一專案兩個指令同時跑；結束即移除。殘留超過 15 分鐘的鎖（程式當掉留下的）會自動接管。
 
-不帶參數執行會開啟選單：
+## `agsy`（選單）
 
-- **找不到設定檔**：視為首次使用，引導進 `init`。
-- **找到設定檔**：頂端一行狀態摘要（來源異動／產物端改動／產物缺失／掛載異常），接著是 apply / plan / status / doctor / init / clean 選項。
+不帶參數執行：
 
----
+- 找不到 `agsy.yaml`：引導進 `init`。
+- 找到：第一行是狀態摘要（來源異動、產物端改動、產物缺失、掛載異常各幾個），接著是 apply / plan / status / doctor / init / clean 選項。
 
-## `agsy init [sources...]`
+## `agsy init`
 
-產生（或編輯）`agsy.yaml`。
+產生或編輯 `agsy.yaml`。
 
-### 全新設定
+### 第一次
 
-依序詢問：來源路徑（一行一個）→ 要服務的工具（多選：Claude Code、OpenAI Codex、Antigravity、Cursor）→ 逐類別的衝突策略（必答；建議 rules=rename、skills=error、workflows=rename、hooks=error）→ 產物目錄（預設 `.agsy`）。寫入後：
+依序問四件事：
 
-- 若專案根已存在真實的 `AGENTS.md`，init 立即提醒：agsy 會在該位置掛載自己產生的 `AGENTS.md`，且絕不合併或覆蓋真實檔案——請把內容搬進某個來源的 `rules/`，或改名保存。
-- 提供一份可勾選的 `.gitignore` 建議清單（`.agsy/`、鎖定檔 `.agsy.lock`、各掛載連結含三個 `hooks.json`、根目錄 `AGENTS.md`；`settings.json` 是你的檔案，不在清單上）；想全選就全選——有些團隊刻意把連結進版控。
+1. 來源路徑，一行一個。
+2. 要服務的工具（多選）。
+3. 每個類別的同名衝突策略（必答；建議 rules=rename、skills=error、workflows=rename、hooks=error）。
+4. 產物資料夾（預設 `.agsy`）。
 
-### 編輯模式（agsy.yaml 已存在）
+寫入後：
 
-- 每一題都以現值預填——**按 Enter 保留**。
-- 目前服務中的工具會預先勾選；手動加進 `build.tools` 的名稱、改過的 `categories`、自訂掛載條目都會原樣沿用。
-- 寫入前顯示**逐行 diff** 並確認；沒有變更 → 不寫入直接結束。
-- 注意：yaml 註解會被換成模板註解——寫入後請重新加上自訂註解。
+- 專案根已有真實的 `AGENTS.md` 時會提醒：agsy 會在那個位置放連結，不會合併或覆蓋真實檔案。把內容搬進某個來源的 `rules/`，或改名保存。
+- 列出一份 `.gitignore` 建議清單（`.agsy/`、`.agsy.lock`、各連結、根目錄 `AGENTS.md`），勾選要加的；`settings.json` 是你的檔案，不在清單上。
 
-### 非互動環境（CI／腳本）
+### 編輯（agsy.yaml 已存在）
 
-衝突策略需要明確選擇，無人可回答時預設取消。非互動用法：
+- 每一題預填現值，按 Enter 保留。
+- 已服務的工具預先勾選；手動改過的 `build.tools`、`categories`、自訂掛載條目原樣沿用。
+- 寫入前顯示逐行 diff 並確認；沒有變更就不寫入。
+- yaml 裡的註解會被換成範本註解。
+
+### 無互動（CI、腳本）
 
 ```sh
 agsy init --yes ~/all-ai-lib ./repo-ai-lib
 ```
 
-來源用參數帶入；`--yes` 即為對建議預設值的明確同意。
-
----
+來源用參數帶入；`--yes` 表示接受建議的預設值。
 
 ## `agsy doctor`
 
-唯讀健檢，不執行任何動作：
+唯讀健檢，依序檢查：
 
-1. 找得到且格式正確的 `agsy.yaml`。
-2. 每個來源路徑的存在性（不存在＝✘ 錯誤）。
-3. 每個來源的類別子目錄：缺子目錄只是 ⚠ 提示；存在的會統計可收錄檔數——**統計遵循與 build 完全相同的收錄規則**，每個被略過的檔案都附原因列出。
-4. 每個掛載點的狀態：不存在（可建立）／已是連結／指向別處或已斷（apply 可修復）／被實體目錄或檔案佔用（apply 會失敗，需手動處理）；每個 merge 目標：不存在（apply 建立）／是 JSON 物件（可合併）／symlink 或不是 JSON 物件（apply 會失敗）。
-5. hooks：每個 hook 的 `command` 直接執行的腳本（第一個 `./` token）在 macOS / Linux 上是否有執行位元（沒有時 ⚠ 提示 `chmod +x`；交給直譯器的檔案不檢查）；`build.tools` 有列但沒掛登記表的工具（來源真的有 hook 時才提示）。
-6. **連結能力探測**：實際建立並移除一個暫時連結。
+1. `agsy.yaml` 找得到且格式正確。
+2. 每個來源路徑存在（不存在 = ✘）。
+3. 每個來源的子資料夾：缺的只是 ⚠；存在的統計會收幾個檔，規則與 build 完全相同，略過的檔附原因。
+4. 每個掛載點：不存在（可建立）／已是連結／指向別處或已斷（apply 可修）／被真實資料夾或檔案佔用（apply 會失敗，要手動處理）。每個 merge 目標：不存在（apply 建立）／是 JSON 物件（可合併）／是符號連結或不是 JSON 物件（apply 會失敗）。
+5. hooks：腳本在 macOS / Linux 上有沒有執行權限（沒有時提示 `chmod +x`；交給直譯器執行的檔案不檢查）；`build.tools` 有列但沒掛登記表的工具（來源真的有 hook 時才提示）。
+6. 連結能力：實際建立並移除一個暫時連結。
 
-結尾 `N 個錯誤,M 個警告`；有錯誤時 exit code 1。
-
----
+結尾印 `N 個錯誤,M 個警告`；有錯誤時結束碼 1。
 
 ## `agsy plan`
 
-把 apply 會做的事完整彩排一遍，**保證不寫入任何東西**。三個區段：
+把 apply 會做的事完整列一遍，不寫入任何東西。分三段：
 
-- **build 預覽**：來源清單（優先序、存在性、標記）；逐類別列出要收錄的項目、誰被改名、每個 workflow 產生哪些形態（`skill skills/<名稱>`、`轉接頭 workflows/<名稱>.md`）；每個 hook 會到達哪幾家（`claude ✓  codex ✓  antigravity —  cursor ✓`）以及沒到達的原因（該家沒有這個事件、不支援這種 handler）；轉換產物 `AGENTS.md` 與四份 hook 登記表各一行；`build.tools` 有列但沒掛登記表的工具的 ⚠ 提示；被 `first` 捨棄的項目；不符收錄規則的檔案與原因；以及所有阻擋條件——同名衝突、輸出路徑碰撞、target 或 `hook.yaml` 錯誤——完整列出。
-- **mount 預覽**：每條連結會發生什麼——建立／刪除重建／修復／被實體路徑擋住；每個 merge 目標會發生什麼——建立／合併進 `hooks` 鍵／更新既有 agsy 條目／條目被改過會先問／不是 JSON 物件會失敗。
-- **摘要**：一行統計。
+**build 預覽**：來源清單（優先序、存在性、標記）；逐類別列出要收的項目、誰被改名、每個 workflow 產出什麼（`skill skills/<名稱>`、`轉接頭 workflows/<名稱>.md`）；每個 hook 的說明、到達哪幾家（`claude ✓  codex ✓  antigravity —  cursor ✓`）與沒到達的原因；轉換產物各一行；被 `first` 捨棄的項目；不符規則的檔案與原因；所有會擋下建置的問題。
 
-exit code：存在衝突／碰撞／target 錯誤時為 1（可當 CI 閘門）。
+**mount 預覽**：每條連結會發生什麼（建立／重建／修復／被佔用）；每個 merge 目標會發生什麼（建立／合併／更新既有條目／條目被改過會先問／不是 JSON 物件會失敗）。
 
----
+**摘要**：一行統計。
+
+有衝突、碰撞、target 或 `hook.yaml` 錯誤時結束碼 1，可當 CI 閘門。
 
 ## `agsy apply`
 
-清空 → 重建 → 掛載的實際執行。
+實際執行：清空產物 → 重建 → 掛載。
 
-### 1. 前置檢查（全部通過才會進入任何確認）
+### 1. 前置檢查
+
+全部通過才會進到任何確認：
 
 | 檢查 | 失敗時 |
 |------|--------|
-| 每個來源路徑都存在 | ✘ 拒絕：絕不以殘缺的來源清單重建 |
-| 沒有掛載點被實體目錄或檔案佔用（包括專案根既有的真實 `AGENTS.md`、真實的 `.codex/hooks.json` 等） | ✘ 拒絕並列出；agsy 絕不刪除非它建立的東西 |
-| 每個 merge 目標（`.claude/settings.json`）不是 symlink、且是 JSON 物件（或不存在） | ✘ 拒絕並列出；agsy 絕不透過連結寫入、也不覆蓋看不懂的檔案 |
-| 沒有 target／`hook.yaml` 錯誤／同名衝突／輸出路徑碰撞 | ✘ 拒絕；`plan` 有完整清單 |
+| 每個來源路徑存在 | ✘ 拒絕 |
+| 沒有掛載點被真實資料夾或檔案佔用（包括根目錄真實的 `AGENTS.md`、真實的 `.codex/hooks.json` 等） | ✘ 拒絕並列出；不會代為刪除 |
+| 每個 merge 目標不是符號連結、且是 JSON 物件（或不存在） | ✘ 拒絕並列出 |
+| 沒有 target、`hook.yaml` 錯誤、同名衝突、輸出路徑碰撞 | ✘ 拒絕；`plan` 有完整清單 |
 
-檢查刻意排在捨棄確認**之前**：致命問題必須在你同意捨棄任何東西之前浮現。
+### 2. 兩張清單
 
-### 2. 兩張清單（每次執行）
+- **清單 A：來源異動**（只列出）：這次會同步的更新、新增、移除。來源被刪的項目特別標示，它的所有產出會一併消失。
+- **清單 B：產物端改動**（要確認）：上次建置以來透過連結被改的一切：修改過的檔、新增的檔、被改的轉換產物、`settings.json` 裡被改的 agsy 條目。每一筆附「想保留：搬去哪個來源」。繼續執行就全部捨棄；沒有終端機且沒加 `--yes` 時取消。
+- 產物資料夾存在但 manifest 讀不到：內容無從得知，一律先問再清。
 
-- **清單 A——來源異動**（資訊性）：本次 apply 會同步的內容——更新、新增、移除的項目。來源被刪除的項目會特別標示：它的所有產出（含轉換形態）將一併消失。
-- **清單 B——產物端改動**（需確認）：上次建置以來透過掛載改動的一切——被修改的檔案、未追蹤的新增、被編輯的轉換產物、`settings.json` 裡被改過的 agsy hook 條目。每一筆都附「想保留：…」指引，指出應搬入或合併進哪個來源。繼續執行即全部捨棄；無 TTY 且未加 `--yes` 時，apply 取消且不動任何東西。
-- 產物目錄存在但 manifest 無法讀取：內容無從得知，apply 一律先問再清。
+### 3. build → mount → merge
 
-### 3. build → mount
+```
+ 清空 .agsy/
+   → 原樣複製 rules、skills、hooks
+   → 轉換 workflows（skill ＋ 轉接頭）
+   → 併出 AGENTS.md
+   → 翻譯四份 hook 登記表
+   → 寫 manifest
+   → 建立連結
+   → merge（hooks.claude.json → .claude/settings.json 的 hooks 欄位）
+```
 
-清空產物 → 原樣複製 rules、skills 與 hooks → 轉換 workflows（skill 形態＋轉接頭）→ 串接 `AGENTS.md` → 翻譯四份 hook 登記表 → 寫入 manifest → 建立連結 → merge（把 `hooks.claude.json` 的條目合併進 `.claude/settings.json`，只換掉 agsy 自己的條目）。**mount 或 merge 步驟失敗時**，建置結果原封不動——排除問題後重跑 `agsy apply` 即可。
+mount 或 merge 失敗時，建置結果保持完整，排除問題後重跑 `agsy apply` 即可。
 
-### 4. 孤兒連結回報
+### 4. 孤兒回報
 
-先前 apply 建立、目前設定已不再引用的連結會列出提醒——**只回報、絕不刪除**；手動移除或交給 `agsy clean`。
-
----
+先前 apply 建立、目前設定已不再引用的連結或 merge 條目會列出提醒，只回報不刪除；手動移除或交給 `agsy clean`。
 
 ## `agsy status`
 
-唯讀。印出與 apply 確認時相同的兩張清單，加上掛載健康：
+唯讀。印出與 apply 相同的兩張清單，加上掛載狀態：
 
-- **清單 A**——來源 → 產物：內容變更／新增／刪除（附「此項目與其轉換形態將一併消失」標示），以及產物缺失（產物副本被刪；apply 可重建）。「來源路徑不存在」（repo 沒 clone、磁碟沒掛）與「檔案被刪」明確分開。
-- **清單 B**——產物端：下次 apply 會捨棄的一切，各附保留指引。沒有回寫機制：想保留就搬進或合併進來源，再 apply。
-- **掛載**：逐連結狀態（正常／遺失／指錯或已斷／被佔用／孤兒），以及每個 merge 目標的狀態（同步／沒有東西可 merge／agsy 條目被改／條目不見／不是 JSON 物件／孤兒——先前 apply 曾 merge、設定已不再列出、仍留有 agsy 條目）。
-- **摘要**：`來源異動 N │ 產物端改動 N │ 產物缺失 N │ 掛載異常 N` 加上建議的下一步。
+- **清單 A**：來源 → 產物：內容變更、新增、刪除，以及產物缺失（產物副本被刪；apply 可重建）。「來源路徑不存在」與「檔案被刪」分開標示。
+- **清單 B**：產物端：下次 apply 會捨棄的一切，各附保留指引。
+- **掛載**：每條連結的狀態（正常／遺失／指錯或已斷／被佔用／孤兒）；每個 merge 目標的狀態（同步／沒有東西可合併／agsy 條目被改／條目不見／不是 JSON 物件／孤兒／專案外未檢查）。
+- **摘要**：`來源異動 N │ 產物端改動 N │ 產物缺失 N │ 掛載異常 N` 與建議的下一步。
 
-exit code `0`＝完全一致；`1`＝有任何落差。適合 CI／git hook；無 TTY 時只印報告。互動終端且有落差時，結尾的行動選單可直接跳進 apply。
-
----
+結束碼 `0` = 完全一致，`1` = 有任何落差。適合 CI 與 git hook。
 
 ## `agsy clean`
 
-反安裝：確認後先把 agsy 的 hook 條目從 merge 目標移出，孤兒目標也包括（`settings.json` 是你的檔案：只刪 agsy 的條目，連同 apply 帶進來的 `hooks` 鍵與事件陣列；其他空著也保留；檔案是 agsy 建的且變空才刪檔；沒有 agsy 條目的檔案不會被動到），再移除掛載連結（含根目錄 `AGENTS.md` 與三個 `hooks.json` 連結）與整個產物目錄；**保留 `agsy.yaml`**。只刪 agsy 建立的東西——實體目錄與檔案會略過並回報；manifest 記錄的孤兒連結也一併清除（每條路徑都先驗證確實是指向產物的連結才動手）；連結移除後空掉的掛載目錄也會移除。之後 `agsy apply` 一次即可全部重建。
+從這個專案移除 agsy 建立的東西，確認後依序：
 
----
+1. 從 merge 目標移除 agsy 的 hook 條目（孤兒目標也包括）。只刪 agsy 的條目與 apply 帶進來的容器；檔案是 agsy 建的且變空才刪檔；沒有 agsy 條目的檔案不動。
+2. 移除掛載連結（含根目錄 `AGENTS.md` 與各 `hooks.json` 連結）與 manifest 記錄的孤兒連結；每條都先確認確實是指向產物的連結才動。真實的資料夾與檔案略過並回報。連結移除後空掉的資料夾也移除。
+3. 刪除整個產物資料夾。
+
+`agsy.yaml` 保留。之後一次 `agsy apply` 可全部重建。
 
 ## `agsy version` / `agsy help`
 
 ```sh
-agsy version    # agsy v1.2.3（commit …、建置時間、go 版本、平台/架構）
-agsy help       # 用法總覽（同 --help / -h）
+agsy version    # agsy v1.2.3（commit、建置時間、go 版本、平台）
+agsy help       # 用法（同 --help / -h）
 ```
 
 → 下一章：[Adapters](adapters.md)

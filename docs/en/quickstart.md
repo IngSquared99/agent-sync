@@ -1,75 +1,81 @@
 # Quick Start
 
-First sync in four steps, all inside the project directory.
+A first sync in four steps, all inside the project folder.
 
-## Step 0: prepare a source library
+```
+ ① prepare a source  ──▶  ② agsy init  ──▶  ③ agsy plan  ──▶  ④ agsy apply
+    put files in it         write config      preview only       build + mount
+```
 
-A source is a directory with up to four subdirectories; any subset works:
+## Step 1: prepare a source folder
+
+A source is a folder with up to four subfolders; keep only the ones you need:
 
 ```
 ~/all-ai-lib/
 ├── rules/
-│   └── python-style.md          # a plain markdown file
+│   └── python-style.md          # a .md file
 ├── skills/
 │   └── code-review/
-│       └── SKILL.md             # a directory with a SKILL.md
+│       └── SKILL.md             # a folder with SKILL.md
 ├── workflows/
-│   └── deploy.md                # a plain markdown file, optional target: front matter
+│   └── deploy.md                # a .md file
 └── hooks/
     └── block-rm/
-        ├── hook.yaml            # declaration: which event, which tools, which script
-        └── block-rm.sh          # the script (exit 2 = block)
+        ├── hook.yaml            # declares: at which moment, which script
+        └── block-rm.sh          # the script (exit code 2 = block)
 ```
 
-You can point at one library or several; a common setup is a personal shared library (`~/all-ai-lib`) plus an in-project one (`./repo-ai-lib`).
+A common setup is two sources: a personal shared library (`~/all-ai-lib`) plus one inside the project (`./repo-ai-lib`).
 
-## Step 1: `agsy init` — generate the config
+## Step 2: `agsy init` writes the config
+
+Run it in the project folder and answer the prompts. Enter accepts the default.
 
 ```
 $ cd your-project
 $ agsy init
-Setting up agsy (Enter accepts the default)
 
-Source paths, ordered by priority (~ prefix = shared library, ./ prefix = in-project)
+Source paths in priority order (~ = shared library, ./ = inside the project)
   source 1: ~/all-ai-lib
   source 2: ./repo-ai-lib
   source 3: ⏎
 
-Which tools should be served? (space-separate multiple numbers, a = all, Enter = all)
+Which tools to serve? (a = all)
     1) Antigravity (.agents/)
     2) Claude Code (.claude/)
     3) OpenAI Codex (.agents/, .codex/)
     4) Cursor (.agents/, .cursor/)
-Enter your choice: a
+Your choice: a
 
-How should same-name conflicts in rules be handled?(recommended rename…)     ❯ rename
-How should same-name conflicts in skills be handled?(recommended error…)     ❯ error
-How should same-name conflicts in workflows be handled?                      ❯ rename
-How should same-name conflicts in hooks be handled? (recommended error…)     ❯ error
+Same-name conflicts in rules?        ❯ rename
+Same-name conflicts in skills?       ❯ error
+Same-name conflicts in workflows?    ❯ rename
+Same-name conflicts in hooks?        ❯ error
 
 Build output directory (default: .agsy): ⏎
 
-✔ Wrote agsy.yaml
+✔ wrote agsy.yaml
 
 The following generated paths are rebuildable and usually belong in .gitignore:
 Add which entries to .gitignore? (a = all) a
-  ✔ Added 10 entries to .gitignore
-  Next: agsy plan to preview → agsy apply to execute
 ```
 
-Answer **a** (all) to the `.gitignore` question unless your team versions the links on purpose; `agsy.yaml` itself **should** be committed.
+A "same-name conflict" is two sources holding a file with the same name: `rename` keeps both (the source name is appended to the filename), `error` stops and lets you decide, `first` keeps only the higher-priority one.
 
-Non-interactive form for scripts: `agsy init --yes ~/all-ai-lib ./repo-ai-lib`.
+The last question is whether to add the generated paths to `.gitignore`; that is your call. `agsy.yaml` itself is meant to be committed.
 
-## Step 2: `agsy plan` — preview without writing
+Non-interactive form for scripts and CI: `agsy init --yes ~/all-ai-lib ./repo-ai-lib`.
+
+## Step 3: `agsy plan` previews
 
 ```
 $ agsy plan
 ```
 
-The preview lists, per category, everything the build would collect: which rules get renamed by the conflict strategy, which forms each workflow produces (`skill skills/deploy` / `stub workflows/deploy.md`), the derived `AGENTS.md` line, every excluded file with its reason, and what happens to each mount link. Nothing is written; adjust and rerun plan as needed.
+Lists everything apply would do: which files are collected, which are renamed, what each workflow produces, which tools each hook reaches, what happens to each link. Nothing is written. Adjust and run it again if something looks off.
 
-## Step 3: `agsy apply` — build and mount
+## Step 4: `agsy apply` builds and mounts
 
 ```
 $ agsy apply
@@ -78,15 +84,15 @@ $ agsy apply
 ✔ merge done: .claude/settings.json ← hooks.claude.json
 ```
 
-Resulting project layout:
+The project afterwards (`→` is a link, `⇐` a merge):
 
 ```
 your-project/
-├── AGENTS.md          → .agsy/AGENTS.md         (all rules, concatenated)
+├── AGENTS.md          → .agsy/AGENTS.md         (all rules, one file)
 ├── .claude/
 │   ├── rules          → .agsy/rules
 │   ├── skills         → .agsy/skills
-│   └── settings.json  ⇐ .agsy/hooks.claude.json (merge: only the "hooks" key is written)
+│   └── settings.json  ⇐ .agsy/hooks.claude.json (only the "hooks" field)
 ├── .agents/
 │   ├── skills         → .agsy/skills
 │   ├── workflows      → .agsy/workflows
@@ -95,30 +101,30 @@ your-project/
 │   └── hooks.json     → .agsy/hooks.codex.json
 ├── .cursor/
 │   └── hooks.json     → .agsy/hooks.cursor.json
-└── .agsy/             the built output
+└── .agsy/             the output
 ```
 
-Each tool reads its native locations and finds the same content. `/deploy` in Claude Code or Cursor runs the workflow's skill form; in Antigravity it runs the stub, which loads that skill. All four run `block-rm.sh` before executing a shell command — when it exits with 2, the command does not run.
+Every tool reads the same content from its own location. Typing `/deploy` in Claude Code or Cursor runs that workflow; `/deploy` in Antigravity does too. All four run `block-rm.sh` before executing a shell command; when it returns exit code 2, the command does not run.
 
-## Step 4: the daily loop
+## Day to day
 
 ```
-edit sources  ──▶  agsy apply  ──▶  every tool is current
-                     ▲
-status: check gaps ──┘  (exit code 1 when anything is out of sync)
+ edit a source  ──▶  agsy apply  ──▶  all four tools are current
+                        ▲
+ agsy status ───────────┘  shows what is out of sync (exit code 1 when anything is)
 ```
 
-When an AI tool writes through a mount (a new rule, an edited skill), `agsy status` lists it with guidance; move what should be kept into a source, then apply. Details: [Command Reference](commands.md) and [Scenario Guide](scenarios.md).
+When an AI tool changes the output through a link (adds a rule, say), `agsy status` lists it and names the source to move it to. Move what you want to keep, then apply.
 
 ## Command cheat sheet
 
 ```
 agsy            menu with a status summary
-agsy doctor     environment health check
+agsy doctor     environment check (read-only)
 agsy plan       preview (read-only)
-agsy apply      build + mount (confirms discards first)
-agsy status     two gap lists + mount health (read-only, CI-friendly exit code)
-agsy clean      uninstall from this project
+agsy apply      build + mount (lists what will be discarded and asks first)
+agsy status     two gap lists + link state (read-only)
+agsy clean      remove what agsy created in this project
 ```
 
-→ Next chapter: [Configuration](config.md)
+→ Next: [Configuration](config.md)
