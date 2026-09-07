@@ -1,119 +1,128 @@
 # Core Concepts: What is agsy?
 
-## The problem it solves
+This chapter is about the problem and the approach, not about operating the tool. Read it before Installation and Quick Start; every term used in later chapters is defined here.
 
-When you use several AI development tools at once (Claude Code, OpenAI Codex, Google Antigravity, Cursor…), each tool reads its own instruction locations, in its own shapes:
+## 1. The problem: one set of rules, four places to keep it
 
-- Claude Code reads rules from `.claude/rules/` and skills from `.claude/skills/`
-- Codex reads the root `AGENTS.md` and skills from `.agents/skills/`
-- Antigravity reads the root `AGENTS.md`, skills from `.agents/skills/`, and `/name` workflows from `.agents/workflows/`
-- Cursor reads the root `AGENTS.md` and skills from `.agents/skills/`
-- Each tool's hooks (agent lifecycle guards) live in yet another place and shape: `.claude/settings.json`, `.codex/hooks.json`, `.agents/hooks.json`, `.cursor/hooks.json`
-
-The same coding conventions, skills, procedures and guards end up copied several times, in several formats, and every change has to be synced to every copy. On top of that you often want a personal shared library layered with a per-project one.
-
-**agsy (agent-sync)** solves exactly this:
-
-> It **merges** instruction files from multiple sources into a single build output directory (`.agsy/` by default), **converts** them into each tool's native shape, then **mounts** the output into each tool's read location via links.
-
-Edit only the sources, run `agsy apply` once, and every tool updates at the same time.
-
-## Know these terms first
-
-The rest of the documentation uses these terms throughout.
-
-| Term | Meaning |
-|------|---------|
-| source | An original instruction library you maintain (the `sources` array); there can be several |
-| output (artifacts) | The directory `apply` builds, `.agsy/` by default. Everything inside is generated and the whole directory can be rebuilt |
-| mount | Creating a "link" at each tool's read location that points into the output |
-| link (symlink / junction / hard link) | An OS-level pointer at another directory or file — **no second copy of the content exists** |
-| category | The four kinds of instruction files: rules, skills, workflows, hooks |
-| derived form | An output produced by conversion rather than verbatim copy: the concatenated `AGENTS.md`, a workflow's skill form, a workflow's redirect stub, each tool's hook registry |
-| hook registry | `.agsy/hooks.<tool>.json`, one per tool, translated from every hook's `hook.yaml` |
-| merge | The mount mode used only for Claude Code: the registry is merged into the `hooks` key of `.claude/settings.json`, everything else in that file untouched |
-| manifest | `.agsy/.agsy-manifest.json`, the build record; agsy uses it to tell what changed on which side |
-| source tag | The source identifier appended to a filename when same-name items are kept via rename, e.g. `-fromlib-all-ai-lib` |
-| adapter | A built-in mount preset for a tool, used by `init` to generate the mount config |
-| tools | The `build.tools` list; the closed set of names a workflow's or hook's `target:` may reference |
-
-## One-way data flow
-
-agsy's data flow is strictly one way:
+AI coding tools (Claude Code, OpenAI Codex, Google Antigravity, Cursor) all read "instruction files for the AI": coding conventions, skills, procedures, guard scripts. Each reads them from a different place, in a different shape:
 
 ```
- sources you maintain ──▶ build (copy + convert) ──▶ .agsy/ ──▶ mount (links / merge) ──▶ each tool
+ one "coding conventions" file
+
+   Claude Code  ──▶ .claude/rules/       (one file per rule)
+   Codex        ──▶ AGENTS.md            (all rules in one file)
+   Antigravity  ──▶ AGENTS.md
+   Cursor       ──▶ AGENTS.md
+
+ one "block rm -rf" guard
+
+   Claude Code  ──▶ a section inside .claude/settings.json
+   Codex        ──▶ .codex/hooks.json
+   Antigravity  ──▶ .agents/hooks.json
+   Cursor       ──▶ .cursor/hooks.json     (each in its own format)
 ```
 
-**The sources are the single source of truth. Everything in `.agsy/` — and therefore everything a tool reads through a mount — is a read-only, rebuildable artifact.** There is no write-back: when a mounted file is edited, `status` reports the change and `apply` lists it, asks for confirmation, and rebuilds over it. Keeping a change always means moving it into a source by hand (status names the destination), so AI-authored content passes human review before entering the library.
+With two or more tools, every instruction exists as several copies, and every edit has to be repeated for each.
 
-## The three layers
+## 2. What agsy does: maintain one copy, generate the rest
+
+agsy is a command-line tool. You maintain **one** set of instruction files (the "source"), run `agsy apply` once, and it does three things:
 
 ```
-┌─────────────────────┐
-│  sources             │  ~/all-ai-lib/       (personal shared library)
-│  (originals you      │  ./repo-ai-lib/      (in-project library)
-│   maintain)          │
-└─────────┬───────────┘
-          │  ① agsy apply: scan → merge → copy → convert
-          ▼
-┌─────────────────────┐
-│  output              │  .agsy/rules/        rules, verbatim
-│  (rebuildable,       │  .agsy/AGENTS.md     rules, concatenated (derived)
-│   read-only)         │  .agsy/skills/       skills + workflow skill forms
-│                      │  .agsy/workflows/    workflow stubs
-│                      │  .agsy/hooks/        hooks, verbatim (scripts + hook.yaml)
-│                      │  .agsy/hooks.*.json  hook registries, one per tool (derived)
-└─────────┬───────────┘
-          │  ② agsy apply: create links (Claude's hooks: merge)
-          ▼
-┌─────────────────────┐
-│  mount               │  AGENTS.md          → .agsy/AGENTS.md
-│  (where AI tools     │  .claude/rules      → .agsy/rules
-│   actually read)     │  .claude/skills     → .agsy/skills
-│                      │  .claude/settings.json ⇐ .agsy/hooks.claude.json (merge)
-│                      │  .agents/skills     → .agsy/skills
-│                      │  .agents/workflows  → .agsy/workflows
-│                      │  .agents/hooks.json → .agsy/hooks.antigravity.json
-│                      │  .codex/hooks.json  → .agsy/hooks.codex.json
-│                      │  .cursor/hooks.json → .agsy/hooks.cursor.json
-└─────────────────────┘
+ ① source           ② output                    ③ mount
+ the one copy   ──▶ copied + converted     ──▶ a "link" at each tool's read
+ you maintain       into .agsy/                location, pointing at the output
+
+ example:
+ ~/all-ai-lib/rules/python-style.md
+        │
+        ▼ apply
+ .agsy/rules/python-style.md         ◀── .claude/rules (link)
+ .agsy/AGENTS.md (all rules, one file) ◀── AGENTS.md (link)
 ```
 
-- **Sources**: the originals you maintain and version-control. Order = priority (earlier wins).
-- **Output** (`build.out`, `.agsy/` by default): the built product. `apply` wipes and rebuilds it every time.
-- **Mount**: links at each tool's read location. Directories are symlinks (junctions on Windows); the root `AGENTS.md` and the three hook registry files are file symlinks (hard links on Windows). Tools see links; the content lives in `.agsy/`. The one exception is Claude Code's hooks: it has no separate file, so agsy **merges** the registry into the `hooks` key of `.claude/settings.json`, owning only the entries it wrote.
+A "link" is an operating-system feature: something that looks like a folder or file but points at another location. When a tool opens `.claude/rules/`, it sees the content of `.agsy/rules/`; there is no second copy.
 
-## The four categories
+Edit the source, run `agsy apply` again, and all four tools update at once.
 
-Instruction files are split into four categories by purpose. Sources store them in four subdirectories (`rules/`, `skills/`, `workflows/`, `hooks/` by default), each with its own format rules:
+## 3. Terms
 
-| Category | Source format | What it is | Output forms |
-|----------|--------------|------------|--------------|
-| rules | single `.md` files | long-lived conventions and style guides, always in context | verbatim copies in `rules/` (for Claude Code) **and** one concatenated `AGENTS.md` (for Codex / Cursor / Antigravity) |
-| skills | **directory** containing `SKILL.md` | a packaged capability; tools pick it up when a task matches its description | verbatim copies in `skills/` |
-| workflows | single `.md` files | human-triggered procedures and SOPs, invoked as `/name` | a **skill form** in `skills/` (front matter gains `disable-model-invocation: true`, so tools that honor it never run the procedure on their own) **and** a redirect **stub** in `workflows/` for Antigravity's `/name` |
-| hooks | **directory** containing `hook.yaml` (scripts alongside) | programs attached to the agent lifecycle: block a tool call before it runs, refuse to stop, check afterwards — the model cannot choose to ignore them | verbatim copies in `hooks/` **and** one **registry** per tool, `hooks.<tool>.json` (event names and structure translated per vendor; script paths rewritten to absolute paths into the output) |
+The rest of the documentation uses these words.
 
-### rules teach, hooks enforce
+| Term | Meaning | Think of it as |
+|------|---------|----------------|
+| source | A folder of instruction files you maintain; there can be several | the original |
+| output | The folder `apply` generates, `.agsy/` by default. Everything inside is generated and can be rebuilt any time | a printed copy |
+| mount | Placing links at each tool's read location, pointing at the output | putting the copy on each desk |
+| link | An OS-level pointer at another folder or file; the content exists once | a shortcut |
+| category | The four kinds of instruction file: rules, skills, workflows, hooks | see next section |
+| derived | Output produced by conversion rather than copying: the combined `AGENTS.md`, a workflow turned into a skill, each tool's hook registry | a translation |
+| registry | One hooks file per tool, `.agsy/hooks.<tool>.json` | a roster in each tool's format |
+| merge | Claude Code only: merging the hooks registry into the `hooks` field of `.claude/settings.json`, leaving everything else untouched | adding your lines to someone else's notebook |
+| manifest | `.agsy/.agsy-manifest.json`, the record of the last apply; `status` uses it to tell which side changed | the stub of the last print run |
+| source tag | The source name appended to a filename when both copies of a same-named file are kept | a stamp of origin |
+| adapter | A tool's built-in mount preset; `init` uses it to generate the config | a factory template |
+| tools | The list of tools to serve, in the config | the recipient list |
 
-A rule is text placed in the model's context: the model has read it, but whether it complies is probabilistic. A hook is a program running outside the agent: at a hook point (say `PreToolUse`) the agent pauses, hands the situation to your script as JSON, and if the script exits with code 2 the action simply does not happen. Anything expressible as an `if` (files that must not be touched, checks that must run, conditions under which the agent may not stop) belongs in hooks; style and preference, which no program can judge, stay in rules. Use both layers; which one a given rule goes into is your call.
+## 4. The four categories
 
-Why workflows become skills: Claude Code, Codex and Cursor read commands and procedures through the skills mechanism, gated by front matter rather than by a separate directory. A workflow source stays a plain single file; build packages it into the skill shape those tools expect. Antigravity reads a `workflows/` directory for `/name` invocation, so build leaves a short stub there that tells the agent to load the corresponding skill (the content exists exactly once, in the skill form).
+Instruction files come in four kinds, each in its own subfolder of a source.
 
-## What each tool ends up reading
+| Category | What it is | Source shape | In a word |
+|----------|-----------|--------------|-----------|
+| rules | Standing conventions and style requirements the AI reads and follows | one `.md` file | teach |
+| skills | Packaged abilities the AI picks up on its own when a task matches | a folder with `SKILL.md` | know |
+| workflows | Procedures a person triggers by typing `/name` | one `.md` file | do |
+| hooks | Small programs that run before or after the AI acts; they block what is not allowed, and the AI cannot opt out | a folder with `hook.yaml` and scripts | block |
+
+**Rules teach, hooks block.** Rules are text the AI reads; whether it complies is probabilistic. Hooks are programs that run outside the AI; blocked means blocked. Anything that can be written as "if … then not allowed" belongs in hooks; style and preference, which no program can judge, belong in rules.
+
+## 5. What each category produces
+
+```
+ source                      output (.agsy/)
+ ─────────────────────       ───────────────────────────────────────
+ rules/a.md           ──▶    rules/a.md              as is
+                      ──▶    AGENTS.md               all rules in one file
+ skills/x/SKILL.md    ──▶    skills/x/SKILL.md       as is
+ workflows/deploy.md  ──▶    skills/deploy/SKILL.md  as a skill (Claude / Codex / Cursor)
+                      ──▶    workflows/deploy.md     a stub (Antigravity's /deploy)
+ hooks/block-rm/      ──▶    hooks/block-rm/         as is (scripts + hook.yaml)
+                      ──▶    hooks.claude.json       ┐
+                      ──▶    hooks.codex.json        │ one registry per tool
+                      ──▶    hooks.antigravity.json  │
+                      ──▶    hooks.cursor.json       ┘
+```
+
+Why a workflow becomes a skill: Claude Code, Codex and Cursor read procedures through the skills mechanism, with a header field deciding who may trigger them. The source stays a plain `.md`; agsy does the conversion. Antigravity triggers `/name` from the `workflows/` folder, so a short "stub" is left there telling the AI to load the matching skill.
+
+## 6. What each tool ends up reading
 
 | Tool | rules | skills | workflows | hooks |
 |------|-------|--------|-----------|-------|
-| Claude Code | `.claude/rules/` (per-file) | `.claude/skills/` | skill form in `.claude/skills/`, invoked as `/name` | `hooks` key of `.claude/settings.json` (merge) |
-| Codex | root `AGENTS.md` | `.agents/skills/` | skill form in `.agents/skills/` | `.codex/hooks.json` |
-| Antigravity | root `AGENTS.md` | `.agents/skills/` | stub in `.agents/workflows/` → `/name` loads the skill | `.agents/hooks.json` |
-| Cursor | root `AGENTS.md` | `.agents/skills/` | skill form in `.agents/skills/`, invoked as `/name` | `.cursor/hooks.json` |
+| Claude Code | `.claude/rules/` | `.claude/skills/` | the skill in `.claude/skills/`, via `/name` | the `hooks` field of `.claude/settings.json` (merge) |
+| Codex | root `AGENTS.md` | `.agents/skills/` | same | `.codex/hooks.json` |
+| Antigravity | root `AGENTS.md` | `.agents/skills/` | the stub in `.agents/workflows/` | `.agents/hooks.json` |
+| Cursor | root `AGENTS.md` | `.agents/skills/` | same as Claude | `.cursor/hooks.json` |
 
-`.agents/skills/` is one directory natively read by Codex, Antigravity and Cursor — one link serves all three. Claude Code does not read `AGENTS.md`, which is why it alone gets the per-file `.claude/rules/` mount.
+`.agents/skills/` is read by Codex, Antigravity and Cursor alike: one link serves three tools. Claude Code does not read `AGENTS.md`, so it gets its own `.claude/rules/` mount.
 
-## Source directories must follow the naming convention
+## 7. One direction only
 
-By default agsy scans `rules/`, `skills/`, `workflows/` and `hooks/` inside each source. A library that has always used different names can be connected without moving files via `build.categories.<cat>.from` — see [Configuration](config.md).
+```
+ source ──▶ apply ──▶ output ──▶ link ──▶ tool
+```
 
-→ Next chapter: [Installation](install.md)
+The source is the only original. The output, and everything the tools read, is a rebuildable copy; nothing is written back from copy to original. When an AI tool edits the output through a link (adds a rule for you, say), `agsy status` lists it; to keep it, move it into a source yourself, then apply. That manual step is the review gate: AI-produced content passes through a person before it enters the original.
+
+## 8. agsy only writes inside the repository
+
+- Sources may live anywhere (a shared library in your home folder, `~/all-ai-lib`); agsy only reads them.
+- The output and the links live inside the project folder.
+- Each tool's personal settings (`~/.claude`, `~/.codex` and the like) are not write targets; that is where your own things go.
+
+## 9. Naming the source subfolders
+
+agsy looks for `rules/`, `skills/`, `workflows/` and `hooks/` in every source; any may be missing. An existing library that uses other names (`prompts/`, say) can be pointed at through `build.categories.<category>.from` in the config, without moving files; see [Configuration](config.md).
+
+→ Next: [Installation](install.md)

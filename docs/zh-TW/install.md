@@ -1,116 +1,110 @@
-# 安裝說明
+# 安裝
 
-依你的作業系統選一種方式，都是一行指令：
+依作業系統選一種方式。裝完用 `agsy version` 確認。
 
-| 方式 | 平台 | 指令 | 事前需要 |
-|------|------|------|----------|
-| 方式一：Homebrew | macOS | `brew install ingsquared99/tap/agsy` | 已裝 Homebrew |
-| 方式二：winget | Windows 10 / 11 | `winget install IngSquared99.agsy` | 不用，系統內建 |
-| 方式三：Go 原始碼 | 全平台（Linux 請走這條） | `go install …`（見下方「從原始碼建置」） | 已裝 Go |
+## 一、選安裝方式
 
-**安全性說明**：方式一、二安裝的是 GitHub Release 上的預編譯執行檔——由公開的 CI 流程從公開原始碼自動編譯，且 brew 的 cask 與 winget 的 manifest 都寫死了對應檔案的 SHA-256 校驗碼，下載內容可驗證、可稽核。方式三則是直接抓原始碼在你自己的電腦上編譯，完全不經過預編譯檔。agsy **不依賴外部模組**：YAML 解析為內嵌（vendored）的 go-yaml 副本，其餘皆為 Go 標準函式庫。
+| 你的系統 | 用這個 | 事前需要 |
+|---------|--------|---------|
+| macOS | 方式一：Homebrew | 已裝 Homebrew |
+| Windows 10 / 11 | 方式二：winget | 不用，系統內建 |
+| Linux，或想自己編譯 | 方式三：Go 原始碼 | 已裝 Go 1.22 以上 |
 
-## 方式一：Homebrew（macOS）
+方式一、二下載的是 GitHub Release 上的預編譯執行檔，由公開的 CI 從公開原始碼自動編譯，安裝設定裡寫死了檔案的 SHA-256 校驗碼。方式三是在你的電腦上從原始碼編譯。agsy 不依賴任何外部套件。
+
+## 二、安裝
+
+### 方式一：Homebrew（macOS）
 
 ```sh
 brew install ingsquared99/tap/agsy
 ```
 
-- brew 會從 GitHub Release 下載對應你機器（Apple Silicon / Intel）的執行檔並校驗。
-- 安裝過程已處理 macOS 的隔離屬性，第一次執行**不會**跳「無法驗證開發者」的警告。
-- Homebrew 本身依 <https://brew.sh> 的指示安裝。
+會自動抓對應 Apple Silicon 或 Intel 的版本。第一次執行不會出現「無法驗證開發者」的警告。還沒有 Homebrew：依 <https://brew.sh> 安裝。
 
-## 方式二：winget（Windows）
+### 方式二：winget（Windows）
 
 ```powershell
 winget install IngSquared99.agsy
 ```
 
-- winget 是 Windows 10 / 11 **內建**的官方套件管理器，不用先裝任何東西，開終端機（PowerShell 或 cmd）直接打即可。
-- 裝完重開一個新的終端機視窗，再執行 `agsy version` 確認。
+開 PowerShell 或 cmd 直接輸入即可。裝完**重開一個新的終端機視窗**再繼續。
 
-## 方式三：從原始碼建置（全平台；Linux 請走這條）
+### 方式三：從原始碼（全平台）
 
-需要 **Go 1.22 以上**（建議最新穩定版）。還沒有 Go：macOS `brew install go`、Windows `winget install GoLang.Go`、Linux 用發行版套件（如 `apt install golang-go`）或官網 <https://go.dev/dl/>。
+還沒有 Go：macOS `brew install go`、Windows `winget install GoLang.Go`、Linux 用發行版套件（例如 `apt install golang-go`）或 <https://go.dev/dl/>。
 
-**快速版**——一行指令，Go 工具鏈自動抓原始碼、本機編譯、裝進 `~/go/bin/`：
+一行安裝：
 
 ```sh
 go install github.com/IngSquared99/agent-sync/cmd/agsy@latest
 ```
 
-裝完若終端機找不到 `agsy`，是 `~/go/bin` 不在 PATH（PATH＝終端機尋找指令的目錄清單）：
+執行檔會放在 `~/go/bin/`。裝完終端機找不到 `agsy` 的話，是這個資料夾不在 PATH（終端機找指令的資料夾清單）裡：
 
 ```sh
-# macOS（預設 zsh）：加入設定檔後重開終端機；Linux（bash）改寫進 ~/.bashrc
+# macOS（zsh）：加進設定檔後重開終端機；Linux（bash）改寫進 ~/.bashrc
 echo 'export PATH="$HOME/go/bin:$PATH"' >> ~/.zshrc
 ```
 
-**完整版**——適合想先檢視程式碼、或打算修改程式的人（另需 Git）：
+想先看程式碼或自己修改：
 
 ```sh
 git clone https://github.com/IngSquared99/agent-sync.git
 cd agent-sync
-go test ./...                # （可選）先跑測試確認環境正常
-go build -o agsy ./cmd/agsy  # 產出 agsy 執行檔（Windows 為 agsy.exe）
-mv agsy ~/go/bin/            # 放進任一在 PATH 裡的目錄
+go test ./...                # 可選：先跑測試
+go build -o agsy ./cmd/agsy  # 產出 agsy（Windows 是 agsy.exe）
+mv agsy ~/go/bin/            # 放進任一在 PATH 裡的資料夾
 ```
 
-不需其他框架或套件管理工具，`go build` 即完成建置。
-
-## 驗證安裝
+## 三、確認
 
 ```sh
 agsy version
 # 例：agsy v1.2.3 (commit abc1234, built 2026-…, go1.22.x, darwin/arm64)
 ```
 
-有印出版本資訊就是裝好了。接著可以在任一專案跑一次環境健檢（唯讀、不會做任何動作）：
+有印出版本就是裝好了。可以再跑一次唯讀的健檢：
 
 ```sh
 agsy doctor
 ```
 
-## 介面語言：中文／英文怎麼決定
+## 四、介面語言
 
-agsy 內建繁體中文與英文兩種介面，**不用設定就會自動判斷**。它啟動時依序檢查三個「環境變數」（環境變數＝作業系統層級的設定值，終端機裡的程式都讀得到），找到第一個有值的就用它：
+agsy 有繁體中文和英文兩種介面，自動判斷，不用設定。判斷順序：
 
 ```
- AGSY_LANG 有值嗎？ ──有──▶ 用它判斷
+ AGSY_LANG 有值？ ──有──▶ 用它
      │ 沒有
-     ▼
- LC_ALL 有值嗎？    ──有──▶ 用它判斷
+ LC_ALL 有值？    ──有──▶ 用它
      │ 沒有
-     ▼
- LANG 有值嗎？      ──有──▶ 用它判斷
+ LANG 有值？      ──有──▶ 用它
      │ 沒有
-     ▼
    英文
 ```
 
-判斷規則只有一條：**值以 `zh` 開頭（例如 `zh_TW.UTF-8`、`zh-TW`）→ 繁體中文；其他任何值 → 英文。**
+規則只有一條：值以 `zh` 開頭（例如 `zh_TW.UTF-8`）→ 繁體中文；其他 → 英文。
 
-三個變數的分工：
+- `LC_ALL`、`LANG` 是作業系統本來就有的語言設定。台灣的 macOS / Linux 通常已經是 `zh_TW.UTF-8`，什麼都不用做。
+- `AGSY_LANG` 是 agsy 專用的開關，優先權最高，用來蓋過系統設定。
 
-- `LC_ALL`、`LANG`：**作業系統本來就有的**語言設定，不是 agsy 的東西。台灣的 macOS / Linux 通常已經是 `zh_TW.UTF-8`，所以什麼都不用做，agsy 一開就是中文。
-- `AGSY_LANG`：**agsy 專屬的開關**，優先權最高，用來蓋過系統設定（例如系統是英文但你想看中文介面）。
-
-想手動指定語言：
+手動指定：
 
 ```sh
-export AGSY_LANG=zh-TW    # 這個終端機視窗內，強制中文
-export AGSY_LANG=en       # 強制英文
+export AGSY_LANG=zh-TW    # 這個終端機視窗內用中文
+export AGSY_LANG=en       # 用英文
 ```
 
-`export` 只對目前這個終端機視窗有效；想永久生效，把那一行加進 shell 設定檔（macOS 預設 zsh → `~/.zshrc`），重開終端機後生效。
+`export` 只對目前的終端機視窗有效。要永久生效，把那一行加進 shell 設定檔（macOS 是 `~/.zshrc`）。
 
-## 升級與移除
+## 五、升級與移除
 
-| | 方式一 Homebrew | 方式二 winget | 方式三 Go |
+| | Homebrew | winget | Go |
 |---|---|---|---|
-| 升級 | `brew upgrade agsy` | `winget upgrade IngSquared99.agsy` | 重跑一次 `go install …@latest` |
-| 移除執行檔 | `brew uninstall agsy` | `winget uninstall IngSquared99.agsy` | 刪 `~/go/bin/agsy` |
+| 升級 | `brew upgrade agsy` | `winget upgrade IngSquared99.agsy` | 重跑 `go install …@latest` |
+| 移除 | `brew uninstall agsy` | `winget uninstall IngSquared99.agsy` | 刪 `~/go/bin/agsy` |
 
-移除前記得先在每個用過 agsy 的專案裡跑 `agsy clean`（移除掛載連結與 `.agsy/` 產物；`agsy.yaml` 會保留，不需要的話手動刪除）。
+移除前，先在每個用過 agsy 的專案跑 `agsy clean`（移除連結與 `.agsy/`；`agsy.yaml` 會留下，不要的話自己刪）。
 
 → 下一章：[快速上手](quickstart.md)

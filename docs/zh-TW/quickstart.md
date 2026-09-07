@@ -1,51 +1,57 @@
 # 快速上手
 
-四步完成第一次同步，全部在專案目錄內進行。
+四步完成第一次同步。全部在專案資料夾內操作。
 
-## 第 0 步：準備一個來源庫
+```
+ ① 準備來源  ──▶  ② agsy init  ──▶  ③ agsy plan  ──▶  ④ agsy apply
+    放指令檔        產生設定檔         預覽（不寫入）      建置＋掛載
+```
 
-來源是一個至多含四個子目錄的資料夾，任何子集皆可：
+## 第 1 步：準備一個來源資料夾
+
+來源是一個資料夾，裡面最多四個子資料夾，只放你需要的就好：
 
 ```
 ~/all-ai-lib/
 ├── rules/
-│   └── python-style.md          # 單純的 markdown 檔
+│   └── python-style.md          # 一個 .md 檔
 ├── skills/
 │   └── code-review/
-│       └── SKILL.md             # 內含 SKILL.md 的目錄
+│       └── SKILL.md             # 含 SKILL.md 的資料夾
 ├── workflows/
-│   └── deploy.md                # 單純的 markdown 檔，可選 target: front matter
+│   └── deploy.md                # 一個 .md 檔
 └── hooks/
     └── block-rm/
-        ├── hook.yaml            # 宣告：哪個事件、哪個工具、跑哪支腳本
-        └── block-rm.sh          # 腳本（exit 2 = 擋下）
+        ├── hook.yaml            # 宣告：哪個時機、跑哪支腳本
+        └── block-rm.sh          # 腳本（結束碼 2 = 擋下）
 ```
 
-可以指向一個庫或多個；常見配置是個人共用庫（`~/all-ai-lib`）加專案內的庫（`./repo-ai-lib`）。
+常見配置是兩個來源：個人共用庫（`~/all-ai-lib`）加專案內的庫（`./repo-ai-lib`）。
 
-## 第 1 步：`agsy init`——產生設定檔
+## 第 2 步：`agsy init` 產生設定檔
+
+在專案資料夾執行，依提示回答。按 Enter 採用預設值。
 
 ```
 $ cd your-project
 $ agsy init
-開始設定 agsy（按 Enter 採用預設值）
 
 來源路徑,依優先序排列（~ 開頭=共用庫,./ 開頭=專案內）
   來源 1: ~/all-ai-lib
   來源 2: ./repo-ai-lib
   來源 3: ⏎
 
-要服務哪些工具?（空白分隔多個編號,a = 全部,Enter = 全部）
+要服務哪些工具?（a = 全部）
     1) Antigravity (.agents/)
     2) Claude Code (.claude/)
     3) OpenAI Codex (.agents/, .codex/)
     4) Cursor (.agents/, .cursor/)
 請輸入: a
 
-rules 的同名衝突怎麼處理?（建議 rename…）        ❯ rename
-skills 的同名衝突怎麼處理?（建議 error…）         ❯ error
-workflows 的同名衝突怎麼處理?                     ❯ rename
-hooks 的同名衝突怎麼處理?（建議 error…）          ❯ error
+rules 的同名衝突怎麼處理?        ❯ rename
+skills 的同名衝突怎麼處理?       ❯ error
+workflows 的同名衝突怎麼處理?    ❯ rename
+hooks 的同名衝突怎麼處理?        ❯ error
 
 建置產物目錄（預設: .agsy）: ⏎
 
@@ -53,23 +59,23 @@ hooks 的同名衝突怎麼處理?（建議 error…）          ❯ error
 
 以下由 agsy 產生的路徑皆可重建,通常應加入 .gitignore:
 要把哪些項目加進 .gitignore?（a = 全部）a
-  ✔ 已將 10 個項目加入 .gitignore
-  下一步:agsy plan 預覽 → agsy apply 執行
 ```
 
-`.gitignore` 那題除非團隊刻意把連結進版控，答 **a**（全部）即可；`agsy.yaml` 本身**應該** commit。
+「同名衝突」是指兩個來源有同名的檔案時怎麼辦：`rename` 兩份都留（檔名加上來源名），`error` 停下來讓你處理，`first` 只留優先序高的那份。
 
-腳本用的非互動形式：`agsy init --yes ~/all-ai-lib ./repo-ai-lib`。
+最後一題是要不要把產物路徑加進 `.gitignore`，由你決定；`agsy.yaml` 本身建議進版控。
 
-## 第 2 步：`agsy plan`——預覽、不寫入
+腳本或 CI 用的無互動寫法：`agsy init --yes ~/all-ai-lib ./repo-ai-lib`。
+
+## 第 3 步：`agsy plan` 預覽
 
 ```
 $ agsy plan
 ```
 
-預覽逐類別列出建置會收的一切：哪些 rules 被衝突策略改名、每個 workflow 產生哪些形態（`skill skills/deploy`／`轉接頭 workflows/deploy.md`）、轉換產物 `AGENTS.md` 一行、每個被排除的檔案與原因、每條掛載連結會發生什麼。不寫入任何檔案；視需要調整後重新執行 plan。
+列出 apply 會做的每一件事：收哪些檔、誰被改名、每個 workflow 產出什麼、每個 hook 到達哪幾家、每條連結會怎樣。不寫入任何東西。有不對的地方，改完再跑一次。
 
-## 第 3 步：`agsy apply`——建置並掛載
+## 第 4 步：`agsy apply` 建置並掛載
 
 ```
 $ agsy apply
@@ -78,15 +84,15 @@ $ agsy apply
 ✔ merge 完成:.claude/settings.json ← hooks.claude.json
 ```
 
-完成後的專案結構：
+完成後專案長這樣（`→` 是連結，`⇐` 是 merge）：
 
 ```
 your-project/
-├── AGENTS.md          → .agsy/AGENTS.md         （全部 rules 串接）
+├── AGENTS.md          → .agsy/AGENTS.md         （全部 rules 併成一檔）
 ├── .claude/
 │   ├── rules          → .agsy/rules
 │   ├── skills         → .agsy/skills
-│   └── settings.json  ⇐ .agsy/hooks.claude.json （merge：只寫進 "hooks" 鍵）
+│   └── settings.json  ⇐ .agsy/hooks.claude.json （只寫進 "hooks" 欄位）
 ├── .agents/
 │   ├── skills         → .agsy/skills
 │   ├── workflows      → .agsy/workflows
@@ -95,30 +101,30 @@ your-project/
 │   └── hooks.json     → .agsy/hooks.codex.json
 ├── .cursor/
 │   └── hooks.json     → .agsy/hooks.cursor.json
-└── .agsy/             建置產物
+└── .agsy/             產物
 ```
 
-每個工具都從自己的原生位置讀到同一批內容。在 Claude Code 或 Cursor 輸入 `/deploy` 會執行該 workflow 的 skill 形態；在 Antigravity 則執行轉接頭，由它載入該 skill。四家在執行 shell 指令前都會先跑 `block-rm.sh`——它回 exit 2 的話，指令就不會執行。
+四家工具都從自己的位置讀到同一批內容。在 Claude Code 或 Cursor 輸入 `/deploy` 會執行那個 workflow；在 Antigravity 也是 `/deploy`。四家在執行 shell 指令前都會先跑 `block-rm.sh`，它回傳結束碼 2 的話指令就不會執行。
 
-## 第 4 步：日常循環
+## 之後的日常
 
 ```
-編輯來源  ──▶  agsy apply  ──▶  所有工具都是最新的
+ 改來源  ──▶  agsy apply  ──▶  四家都是最新的
                  ▲
-status 檢查落差 ──┘（有任何不同步時 exit code 為 1）
+ agsy status ────┘  看哪裡不同步（有落差時結束碼為 1）
 ```
 
-AI 工具透過掛載寫入內容（新規則、改過的 skill）時，`agsy status` 會附指引列出；把要保留的搬進來源，再 apply。詳見[指令參考](commands.md)與[情境指南](scenarios.md)。
+AI 工具透過連結改了產物時（例如加了新規則），`agsy status` 會列出來並說明要搬去哪個來源。想保留就搬過去，再 apply。
 
 ## 指令速查
 
 ```
-agsy            附狀態摘要的選單
-agsy doctor     環境健檢
+agsy            選單（附狀態摘要）
+agsy doctor     環境健檢（唯讀）
 agsy plan       預覽（唯讀）
-agsy apply      建置＋掛載（先確認要捨棄的東西）
-agsy status     兩張落差清單＋掛載健康（唯讀,exit code 適合 CI）
-agsy clean      從此專案反安裝
+agsy apply      建置＋掛載（會先列出要捨棄的東西並詢問）
+agsy status     兩張落差清單＋連結狀態（唯讀）
+agsy clean      從這個專案移除 agsy 建立的東西
 ```
 
 → 下一章：[設定檔](config.md)
