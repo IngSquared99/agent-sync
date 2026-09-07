@@ -186,6 +186,17 @@ func cmdApply() int {
 		return 1
 	}
 	fmt.Printf(i18n.T("✔ build done: %d items → %s/\n"), p.Placed(), cfg.Build.Out)
+	// Execute wrote the manifest without merge records; carry the previous
+	// apply's over now (created flag, containers agsy added, previous hooks
+	// directory) so a failure in the mount or merge step keeps them.
+	var oldMerges []build.MergeRecord
+	if mErr == nil && m != nil {
+		oldMerges = m.Merges
+	}
+	newM.Merges = oldMerges
+	if err := build.WriteManifest(cfg.OutDir(), newM); err != nil {
+		fmt.Println(i18n.T("⚠ failed to record merge targets in the manifest:"), err)
+	}
 
 	// mount
 	links, err := mount.Inspect(cfg)
@@ -201,17 +212,22 @@ func cmdApply() int {
 
 	// merge (Claude Code's settings.json): the registry's groups replace the
 	// agsy-owned groups; everything else in the file is preserved.
-	var oldMerges []build.MergeRecord
-	if mErr == nil && m != nil {
-		oldMerges = m.Merges
-	}
 	merges, err := mount.InspectMerge(cfg, oldMerges)
 	if err != nil {
 		return errExit(err)
 	}
+	// From here on the manifest carries this apply's records; previous ones
+	// are kept only as orphans (re-added below).
+	newM.Merges = nil
 	if len(merges) > 0 {
 		recs, err := mount.ApplyMerge(cfg, merges, oldMerges)
 		if err != nil {
+			// Targets written before the failure get their fresh record;
+			// the rest keep the previous one.
+			newM.Merges = mergeRecords(recs, oldMerges)
+			if werr := build.WriteManifest(cfg.OutDir(), newM); werr != nil {
+				fmt.Println(i18n.T("⚠ failed to record merge targets in the manifest:"), werr)
+			}
 			fmt.Println("✘", err)
 			fmt.Printf(i18n.T("(build finished, %s/ and links are intact; only the merge step is incomplete — fix the issue and rerun agsy apply)\n"), cfg.Build.Out)
 			return 1
@@ -227,11 +243,13 @@ func cmdApply() int {
 	}
 	// Orphaned merge targets keep their record (status keeps reporting them,
 	// clean strips them) and are listed below with the orphaned links.
-	mergeOrphans, err := mount.MergeOrphans(cfg, oldMerges)
+	// Records outside the project are never opened; they are kept and
+	// reported as unchecked.
+	mergeOrphans, foreignMerges, err := mount.MergeOrphans(cfg, oldMerges)
 	if err != nil {
 		return errExit(err)
 	}
-	for _, o := range mergeOrphans {
+	for _, o := range append(append([]string{}, mergeOrphans...), foreignMerges...) {
 		for _, r := range oldMerges {
 			if filepath.Clean(r.Path) == o {
 				newM.Merges = append(newM.Merges, r)
@@ -289,7 +307,41 @@ func cmdApply() int {
 		}
 		fmt.Println(i18n.T("  The tool keeps running those old hooks. Remove the entries by hand, or agsy clean strips them together with everything else agsy built."))
 	}
+	printForeignMerges(foreignMerges)
 	return 0
+}
+
+// mergeRecords returns newer plus every older record whose path newer does
+// not carry.
+func mergeRecords(newer, older []build.MergeRecord) []build.MergeRecord {
+	out := append([]build.MergeRecord{}, newer...)
+	for _, o := range older {
+		found := false
+		for _, n := range newer {
+			if filepath.Clean(n.Path) == filepath.Clean(o.Path) {
+				found = true
+				break
+			}
+		}
+		if !found {
+			out = append(out, o)
+		}
+	}
+	return out
+}
+
+// printForeignMerges warns about recorded merge targets outside the project
+// directory. The manifest is untrusted, so they are never opened; agsy only
+// knows it once wrote there.
+func printForeignMerges(paths []string) {
+	if len(paths) == 0 {
+		return
+	}
+	fmt.Printf(i18n.T("⚠ %d merge targets recorded by a previous apply lie outside the project directory and were not checked (they may still hold agsy hook entries):\n"), len(paths))
+	for _, p := range paths {
+		fmt.Println("  -", p)
+	}
+	fmt.Println(i18n.T("  Open the file and remove the entries whose statusMessage starts with agsy: by hand; agsy never edits files outside the project on its own."))
 }
 
 // printSourceChanges prints list A: informational, no confirmation needed —

@@ -436,7 +436,7 @@ func TestHookOverridesHandlerFieldsAndPassthrough(t *testing.T) {
 	out := cfg.OutDir()
 	cl := readJSON(t, filepath.Join(out, "hooks.claude.json"))
 	h := cl["hooks"].(map[string]interface{})["PreToolUse"].([]interface{})[0].(map[string]interface{})["hooks"].([]interface{})[0].(map[string]interface{})
-	if h["timeout"] != float64(10) || h["statusMessage"] != "checking" || h["async"] != true {
+	if h["timeout"] != float64(10) || h["statusMessage"] != "agsy:block-rm · checking" || h["async"] != true {
 		t.Errorf("claude must pass unknown fields through untouched: %v", h)
 	}
 	if _, has := h["commandWindows"]; has {
@@ -682,5 +682,194 @@ func TestHookOverrideTypeAndMissingScript(t *testing.T) {
 	h := tr.events["Stop"][0].(orderedObj).vals["hooks"].([]interface{})[0].(orderedObj)
 	if _, has := h.vals["command"]; has || h.vals["type"] != "prompt" {
 		t.Errorf("command must be dropped on the flipped handler: %v", h.vals)
+	}
+}
+
+// config.HookTools / HookMergeTools must mirror the dialect table: every
+// dialect has a registry file name, and exactly the nested-shape dialects
+// are mergeable (merge can only read that shape back).
+func TestHookTablesInStep(t *testing.T) {
+	for tool, d := range dialects {
+		if config.HookRegistryFiles[tool] == "" {
+			t.Errorf("dialect %q has no registry file name in config.HookRegistryFiles", tool)
+		}
+		if (d.shape == shapeNested) != config.HookMergeTools[tool] {
+			t.Errorf("dialect %q: nested=%v but config.HookMergeTools=%v", tool, d.shape == shapeNested, config.HookMergeTools[tool])
+		}
+	}
+	for _, tool := range config.HookTools {
+		if !HasHookDialect(tool) {
+			t.Errorf("config.HookTools lists %q, which has no dialect", tool)
+		}
+	}
+}
+
+// Every handler written for a merged dialect carries the owner mark; a
+// statusMessage from hook.yaml follows it, one already marked is kept.
+func TestMarkStatus(t *testing.T) {
+	cases := map[interface{}]string{
+		nil:                "agsy:h",
+		"":                 "agsy:h",
+		"  ":               "agsy:h",
+		"linting":          "agsy:h · linting",
+		"agsy:h · linting": "agsy:h · linting",
+		"agsy:other":       "agsy:other",
+		42:                 "agsy:h",
+	}
+	for in, want := range cases {
+		if got := markStatus("h", in); got != want {
+			t.Errorf("markStatus(%v) = %q, want %q", in, got, want)
+		}
+	}
+}
+
+// A matcher on an event the named dialect does not filter is dropped with
+// a note, never silently.
+func TestHookAntigravityMatcherDroppedWithNote(t *testing.T) {
+	spec := &HookSpec{Events: map[string][]HookGroup{
+		"Stop": {{Matcher: "something", Hooks: []map[string]interface{}{{"command": "echo x"}}}},
+	}}
+	tr, notes := translateHook(spec, "h", "antigravity", "")
+	g := tr.events["Stop"][0].(orderedObj)
+	if _, has := g.vals["matcher"]; has {
+		t.Error("antigravity Stop must not carry a matcher")
+	}
+	if len(notes) != 1 || !strings.Contains(notes[0], "ignores the matcher on Stop") {
+		t.Errorf("dropping the matcher must leave a note, got %v", notes)
+	}
+}
+
+// Override validation: an index past the group, an emptied command and a
+// quoted ./ path are all reported by parseHookSpec, together.
+func TestHookOverrideValidation(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, filepath.Join(dir, "x.sh"), "#!/bin/sh\n")
+	writeFile(t, filepath.Join(dir, HookFile), `description: x
+events:
+  PreToolUse:
+    - hooks:
+        - command: ./x.sh
+        - command: '"./x.sh" -v'
+      overrides:
+        codex:
+          hooks:
+            - command: ""
+        cursor:
+          hooks:
+            - {}
+            - {}
+            - command: ./y.sh
+`)
+	_, err := parseHookSpec(filepath.Join(dir, HookFile))
+	if err == nil {
+		t.Fatal("expected problems")
+	}
+	for _, want := range []string{
+		"handler 2 of PreToolUse quotes a ./ path",
+		"overrides.codex leaves handler 1 of PreToolUse without a command",
+		"overrides.cursor of PreToolUse lists 3 handlers, but the group has only 2",
+	} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("missing %q in:\n%v", want, err)
+		}
+	}
+}
+
+// LoadRegistryGroups refuses registries of another shape instead of
+// returning an empty set: the flat (cursor) event names and the named
+// (antigravity) document.
+func TestLoadRegistryGroupsRejectsOtherShapes(t *testing.T) {
+	dir := t.TempDir()
+	flat := filepath.Join(dir, "hooks.cursor.json")
+	writeFile(t, flat, `{"version":1,"hooks":{"preToolUse":[{"command":"/x/y.sh"}]}}`)
+	if _, err := LoadRegistryGroups(flat); err == nil || !strings.Contains(err.Error(), "preToolUse") {
+		t.Errorf("flat registry must be refused naming the event, got %v", err)
+	}
+	named := filepath.Join(dir, "hooks.antigravity.json")
+	writeFile(t, named, `{"h":{"enabled":true,"PreToolUse":[]}}`)
+	if _, err := LoadRegistryGroups(named); err == nil || !strings.Contains(err.Error(), `no "hooks" object`) {
+		t.Errorf("named registry must be refused, got %v", err)
+	}
+	nested := filepath.Join(dir, "hooks.claude.json")
+	writeFile(t, nested, `{"hooks":{"PreToolUse":[{"hooks":[{"type":"command","command":"/x/y.sh"}]}]}}`)
+	r, err := LoadRegistryGroups(nested)
+	if err != nil || len(r.Groups["PreToolUse"]) != 1 {
+		t.Errorf("nested registry must load, got %v %v", r, err)
+	}
+	empty := filepath.Join(dir, "hooks.codex.json")
+	writeFile(t, empty, `{"hooks":{}}`)
+	if r, err := LoadRegistryGroups(empty); err != nil || len(r.Groups) != 0 {
+		t.Errorf("empty nested registry must load as empty, got %v %v", r, err)
+	}
+}
+
+// resolveHooks lists every problem of a hook at once: each unknown target,
+// each unknown override tool and each missing ./ script, deduplicated.
+func TestHookRouteErrorsListedTogether(t *testing.T) {
+	cfg, lib := setupHooks(t, "error")
+	writeFile(t, filepath.Join(lib, "hooks", "block-rm", "hook.yaml"), `target: [claude, nope, 42]
+events:
+  PreToolUse:
+    - hooks:
+        - command: ./missing-a.sh
+        - command: ./missing-a.sh
+        - command: ./missing-b.sh
+      overrides:
+        ghost: { matcher: x }
+        codex: { matcher: y }
+  Stop:
+    - hooks:
+        - command: ./block-rm.sh
+      overrides:
+        ghost: { matcher: z }
+`)
+	p := compute(t, cfg)
+	want := []string{
+		`target refers to unknown tool "nope"`,
+		`target refers to unknown tool "42"`,
+		`overrides refers to unknown tool "ghost"`,
+		"refers to ./missing-a.sh",
+		"refers to ./missing-b.sh",
+	}
+	joined := strings.Join(p.RouteErrors, "\n")
+	for _, w := range want {
+		if !strings.Contains(joined, w) {
+			t.Errorf("missing %q in:\n%s", w, joined)
+		}
+	}
+	if len(p.RouteErrors) != len(want) {
+		t.Errorf("expected %d errors (each once), got %d:\n%s", len(want), len(p.RouteErrors), joined)
+	}
+}
+
+// Claude Code has PostCompact; the event reaches its registry.
+func TestHookClaudePostCompact(t *testing.T) {
+	spec := &HookSpec{Events: map[string][]HookGroup{
+		"PostCompact": {{Hooks: []map[string]interface{}{{"command": "echo x"}}}},
+	}}
+	tr, notes := translateHook(spec, "h", "claude", "")
+	if len(tr.events["PostCompact"]) != 1 || len(notes) != 0 {
+		t.Errorf("PostCompact must reach claude without notes: %v %v", tr.events, notes)
+	}
+}
+
+// A hook directory name with no usable character becomes "hook", not the
+// skill default.
+func TestHookNameFallback(t *testing.T) {
+	cfg, lib := setupHooks(t, "error")
+	writeFile(t, filepath.Join(lib, "hooks", "___", "hook.yaml"), blockRM)
+	writeFile(t, filepath.Join(lib, "hooks", "___", "block-rm.sh"), "#!/bin/sh\n")
+	p := compute(t, cfg)
+	found := false
+	for _, it := range p.Items {
+		if it.Category == "hooks" && it.Name == "___" {
+			found = true
+			if it.OutName != "hook" {
+				t.Errorf("OutName = %q, want hook", it.OutName)
+			}
+		}
+	}
+	if !found {
+		t.Fatal("hook ___ not collected")
 	}
 }

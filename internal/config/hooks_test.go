@@ -80,14 +80,43 @@ func TestMergeTargetMustBeRegistry(t *testing.T) {
 	body := strings.Replace(baseYAML,
 		"    links: {rules: rules, skills: skills}\n",
 		"    links: {rules: rules}\n    merge: {settings.json: skills}\n", 1)
-	mustFail(t, body, "only a hook registry file can be merged")
+	mustFail(t, body, "only a hook registry of the claude / codex shape can be merged")
 }
 
 func TestMergeToolMustBeListed(t *testing.T) {
-	body := strings.Replace(baseYAML,
+	body := strings.Replace(strings.Replace(baseYAML, "tools: [claude, codex]", "tools: [claude]", 1),
 		"    links: {rules: rules, skills: skills}\n",
-		"    links: {rules: rules}\n    merge: {settings.json: hooks.cursor.json}\n", 1)
-	mustFail(t, body, `build.tools does not list "cursor"`)
+		"    links: {rules: rules}\n    merge: {settings.json: hooks.codex.json}\n", 1)
+	mustFail(t, body, `build.tools does not list "codex"`)
+}
+
+// Only registries of the nested shape can be read back by merge; the flat
+// (cursor) and named (antigravity) ones are refused at config time rather
+// than loading as empty and leaving the target silently idle.
+func TestMergeRefusesNonNestedRegistry(t *testing.T) {
+	for _, reg := range []string{"hooks.cursor.json", "hooks.antigravity.json"} {
+		body := strings.Replace(baseYAML,
+			"    links: {rules: rules, skills: skills}\n",
+			"    links: {rules: rules}\n    merge: {settings.json: "+reg+"}\n", 1)
+		mustFail(t, body, "only a hook registry of the claude / codex shape can be merged")
+	}
+}
+
+// A merge target must lie inside the project even with outside_project:
+// a shared user-level settings.json would be claimed by every project.
+func TestMergeOutsideProjectRefused(t *testing.T) {
+	outside := t.TempDir()
+	body := strings.Replace(baseYAML,
+		"  - dir: .claude\n    links: {rules: rules, skills: skills}\n",
+		"  - dir: "+outside+"\n    outside_project: true\n    links: {rules: rules}\n    merge: {settings.json: hooks.claude.json}\n", 1)
+	mustFail(t, body, "merge targets must be inside the project")
+	// links alone outside the project stay allowed with the opt-in
+	body = strings.Replace(baseYAML,
+		"  - dir: .claude\n    links: {rules: rules, skills: skills}\n",
+		"  - dir: "+outside+"\n    outside_project: true\n    links: {rules: rules, skills: skills}\n", 1)
+	if _, err := load(t, body); err != nil {
+		t.Fatalf("links outside the project with outside_project must be accepted: %v", err)
+	}
 }
 
 func TestMergeAndLinkSameName(t *testing.T) {
@@ -108,4 +137,13 @@ func TestMergeMergedAcrossSameDir(t *testing.T) {
 	body := baseYAML + "  - dir: ./.claude\n    merge: {settings.json: hooks.claude.json}\n" +
 		"  - dir: .claude\n    merge: {settings.json: hooks.codex.json}\n"
 	mustFail(t, body, "merge.settings.json more than once")
+}
+
+// One registry is consumed one way: a link and a merge of the same file
+// would run the same hooks twice.
+func TestRegistryLinkedAndMergedRefused(t *testing.T) {
+	body := strings.Replace(baseYAML,
+		"    links: {rules: rules, skills: skills}\n",
+		"    links: {rules: rules, hooks.json: hooks.claude.json}\n    merge: {settings.json: hooks.claude.json}\n", 1)
+	mustFail(t, body, "a registry is either linked or merged")
 }

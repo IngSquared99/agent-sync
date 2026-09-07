@@ -347,8 +347,8 @@ func TestVendorViewClaudeCode(t *testing.T) {
 	types := map[string]bool{}
 	for _, h := range hs {
 		types[h["type"].(string)] = true
-		if h["type"] == "command" && h["statusMessage"] != "my own message" {
-			t.Errorf("user statusMessage must be preserved: %v", h)
+		if h["type"] == "command" && h["statusMessage"] != "agsy:mixed · my own message" {
+			t.Errorf("user statusMessage must follow the owner mark: %v", h)
 		}
 		if h["type"] == "http" && h["statusMessage"] != "agsy:mixed" {
 			t.Errorf("non-command handler must carry the owner mark: %v", h)

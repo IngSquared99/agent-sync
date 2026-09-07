@@ -73,6 +73,9 @@ func cmdPlan() int {
 			}
 			fmt.Println(line)
 			if cat == "hooks" && it.Hook != nil {
+				if d := strings.TrimSpace(it.Hook.Description); d != "" {
+					fmt.Println("      " + d)
+				}
 				var reach []string
 				for _, tool := range cfg.Build.Tools {
 					if !build.HasHookDialect(tool) {

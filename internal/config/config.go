@@ -49,6 +49,12 @@ var HookRegistryFiles = map[string]string{
 	"cursor":      "hooks.cursor.json",
 }
 
+// HookMergeTools lists the tools whose registry has the nested shape merge
+// reads back ({"hooks": {Event: [group…]}}); only those registries may be a
+// mount merge target. The shapes live in build/hooks.go (dialects); a test
+// there keeps the two in step.
+var HookMergeTools = map[string]bool{"claude": true, "codex": true}
+
 // IsRegistryFile reports whether name is one of the hook registry files.
 func IsRegistryFile(name string) bool {
 	return RegistryTool(name) != ""
@@ -500,8 +506,16 @@ func (c *Config) validateMount() []string {
 			// point the user's GLOBAL tool configuration at repository-
 			// controlled content — a hijack, not a sync.
 			rbase := ResolveSymlinks(c.BaseDir)
-			if rabs != rbase && !IsAncestor(rbase, rabs) && !m.OutsideProject {
+			outside := rabs != rbase && !IsAncestor(rbase, rabs)
+			if outside && !m.OutsideProject {
 				errs = append(errs, fmt.Sprintf(i18n.T("mount dir %q resolves outside the project directory (%s). Only do this for a config you wrote yourself — a mount outside the project can redirect global tool configuration (e.g. ~/.claude) at this project's content. To confirm the intent, add outside_project: true to that mount entry"), m.Dir, abs))
+			}
+			// Merge targets stay inside the project, opt-in or not: agsy owns
+			// the project-level file only; a user-level file such as
+			// ~/.claude/settings.json is shared between projects and belongs
+			// to the user.
+			if outside && len(m.Merge) > 0 {
+				errs = append(errs, fmt.Sprintf(i18n.T("mount dir %q resolves outside the project directory (%s), but it carries merge entries; merge targets must be inside the project (put personal hooks in the tool's own user-level file)"), m.Dir, abs))
 			}
 			for _, s := range c.Sources {
 				sabs, serr := c.ExpandPath(s)
@@ -533,8 +547,8 @@ func (c *Config) validateMount() []string {
 			}
 			clean := strings.Trim(filepath.ToSlash(sub), "/")
 			tool := RegistryTool(clean)
-			if tool == "" {
-				errs = append(errs, fmt.Sprintf(i18n.T("mount %s merge.%s points to %q, but only a hook registry file can be merged, valid values: %v"), m.Dir, name, sub, registryNames()))
+			if tool == "" || !HookMergeTools[tool] {
+				errs = append(errs, fmt.Sprintf(i18n.T("mount %s merge.%s points to %q, but only a hook registry of the claude / codex shape can be merged, valid values: %v"), m.Dir, name, sub, mergeableRegistryNames()))
 				continue
 			}
 			if !c.HasTool(tool) {
@@ -570,11 +584,14 @@ func (c *Config) validateMount() []string {
 	return errs
 }
 
-// registryNames lists the hook registry file names in HookTools order.
-func registryNames() []string {
+// mergeableRegistryNames lists the registry file names merge accepts, in
+// HookTools order.
+func mergeableRegistryNames() []string {
 	var out []string
 	for _, t := range HookTools {
-		out = append(out, HookRegistryFiles[t])
+		if HookMergeTools[t] {
+			out = append(out, HookRegistryFiles[t])
+		}
 	}
 	return out
 }
@@ -586,12 +603,27 @@ func registryNames() []string {
 // contain hooks.
 func (c *Config) validateHooksMount() []string {
 	var errs []string
+	linked := map[string]string{} // registry → "dir/name" of the link consuming it
 	for _, m := range c.Mount {
 		for name, sub := range m.Links {
 			clean := strings.Trim(filepath.ToSlash(sub), "/")
 			tool := RegistryTool(clean)
-			if tool != "" && !c.HasTool(tool) {
+			if tool == "" {
+				continue
+			}
+			if !c.HasTool(tool) {
 				errs = append(errs, fmt.Sprintf(i18n.T("mount %s links.%s points to %q, but build.tools does not list %q; the file would stay empty"), m.Dir, name, sub, tool))
+			}
+			linked[clean] = m.Dir + "/" + name
+		}
+	}
+	// A registry is consumed one way: linked as a whole file, or merged into
+	// a user file. Both at once means two places run the same hooks.
+	for _, m := range c.Mount {
+		for name, sub := range m.Merge {
+			clean := strings.Trim(filepath.ToSlash(sub), "/")
+			if via, both := linked[clean]; both {
+				errs = append(errs, fmt.Sprintf(i18n.T("mount %s merge.%s and link %s both consume %q; a registry is either linked or merged, keep one"), m.Dir, name, via, sub))
 			}
 		}
 	}
