@@ -492,3 +492,108 @@ func TestMergeDropsOwnEmptyEventOnChange(t *testing.T) {
 		t.Errorf("record must follow: %+v", recs[0])
 	}
 }
+
+// An idle record (nothing was merged last time) must not stick: once the
+// registry gains groups, inspect reports Missing / Absent and apply merges.
+func TestMergeIdleRecordDoesNotStick(t *testing.T) {
+	cfg, settings, _ := setupMerge(t)
+	reg := filepath.Join(cfg.OutDir(), "hooks.claude.json")
+	full, _ := os.ReadFile(reg)
+	if err := os.WriteFile(reg, []byte(`{"hooks":{}}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	plans, recs := applyOnce(t, cfg, nil)
+	if plans[0].State != MergeIdle || recs[0].Hash != emptyHash {
+		t.Fatalf("first apply: state %v hash %s", plans[0].State, recs[0].Hash)
+	}
+	// registry gains a group (a hook was added and built)
+	if err := os.WriteFile(reg, full, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	plans, err := InspectMerge(cfg, recs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if plans[0].State != MergeMissing {
+		t.Errorf("state = %v, want Missing (registry now has groups)", plans[0].State)
+	}
+	plans, recs = applyOnce(t, cfg, recs)
+	raw, err := os.ReadFile(settings)
+	if err != nil || !strings.Contains(string(raw), "block-rm.sh") {
+		t.Fatalf("apply after an idle record must merge: %v\n%s", err, raw)
+	}
+	// same with an existing file holding nothing of agsy's
+	writeSettings(t, settings, `{"model":"opus"}`)
+	if err := os.WriteFile(reg, []byte(`{"hooks":{}}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	_, recs = applyOnce(t, cfg, nil)
+	if err := os.WriteFile(reg, full, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	plans, err = InspectMerge(cfg, recs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if plans[0].State != MergeAbsent {
+		t.Errorf("state = %v, want Absent", plans[0].State)
+	}
+	applyOnce(t, cfg, recs)
+	raw, _ = os.ReadFile(settings)
+	if !strings.Contains(string(raw), "block-rm.sh") || !strings.Contains(string(raw), `"model"`) {
+		t.Errorf("apply must merge into the existing file and keep its keys:\n%s", raw)
+	}
+}
+
+// Stale means "a script path of this hook points into a previous output
+// hooks directory": a path under a recorded previous directory, or (without
+// a record) one whose tail is hooks/<name>/ outside the current directory.
+// Interpreter paths and other absolute paths never count.
+func TestHasStalePath(t *testing.T) {
+	cur := filepath.Join(t.TempDir(), "proj", ".agsy", "hooks")
+	old := filepath.Join(t.TempDir(), "old", ".agsy", "hooks")
+	group := func(cmd, status string) map[string][]json.RawMessage {
+		g := `{"hooks":[{"type":"command","command":` + jsonStr(cmd) + `,"statusMessage":` + jsonStr(status) + `}]}`
+		return map[string][]json.RawMessage{"PreToolUse": {json.RawMessage(g)}}
+	}
+	mark := build.OwnerMark + "block-rm"
+	curScript := filepath.Join(cur, "block-rm", "block-rm.sh")
+	oldScript := filepath.Join(old, "block-rm", "block-rm.sh")
+	cases := []struct {
+		name     string
+		owned    map[string][]json.RawMessage
+		prefixes []string
+		want     bool
+	}{
+		{"current path", group(curScript, mark), []string{cur}, false},
+		{"interpreter before current path", group("/usr/bin/env sh "+curScript, mark), []string{cur}, false},
+		{"recorded previous dir", group(oldScript, mark), []string{cur, old}, true},
+		{"previous dir by tail, no record", group(oldScript, mark), []string{cur}, true},
+		{"previous dir by tail, user message after mark", group(oldScript, mark+" · running"), []string{cur}, true},
+		{"foreign absolute path, no record", group("/opt/tools/hooks/other/run.sh", mark), []string{cur}, false},
+		{"unmarked group, foreign path", group("/opt/x/hooks/block-rm/run.sh", ""), []string{cur}, false},
+	}
+	for _, c := range cases {
+		if got := hasStalePath(c.owned, "hooks", c.prefixes); got != c.want {
+			t.Errorf("%s: stale=%v, want %v", c.name, got, c.want)
+		}
+	}
+}
+
+// Recorded merge targets outside the project are never opened, but they
+// are reported as foreign rather than dropped.
+func TestMergeOrphansReportsForeignRecords(t *testing.T) {
+	cfg, _, _ := setupMerge(t)
+	outside := filepath.Join(t.TempDir(), ".claude", "settings.json")
+	recs := []build.MergeRecord{{Path: outside, Key: MergeKey, Hash: "x"}}
+	orphans, foreign, err := MergeOrphans(cfg, recs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(orphans) != 0 {
+		t.Errorf("outside path must not be inspected as an orphan: %v", orphans)
+	}
+	if len(foreign) != 1 || foreign[0] != filepath.Clean(outside) {
+		t.Errorf("outside path must be reported as foreign: %v", foreign)
+	}
+}

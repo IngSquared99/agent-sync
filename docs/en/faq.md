@@ -144,7 +144,7 @@ A rule is text the model reads; compliance is probabilistic — a long context o
 
 ### Q27: Why does Claude Code use merge while the other three use links?
 
-Codex, Antigravity and Cursor each have a dedicated `hooks.json`, so handing the whole file to agsy through a link is the clean option. Claude Code's hooks can only live in the `hooks` key of `.claude/settings.json`, next to your permissions, model and other settings — a link would swallow them — so agsy merges only its own entries into that file. Recognition works like links: an entry whose command points into `.agsy/hooks/` is agsy's, no marker needed.
+Codex, Antigravity and Cursor each have a dedicated `hooks.json`, so handing the whole file to agsy through a link is the clean option. Claude Code's hooks can only live in the `hooks` key of `.claude/settings.json`, next to your permissions, model and other settings — a link would swallow them — so agsy merges only its own entries into that file. Recognition uses two clues: a handler whose `statusMessage` starts with `agsy:` (build sets it on every entry it writes), or a command pointing into `.agsy/hooks/`; either one makes the group agsy's. Merge targets must lie inside the project; `~/.claude/settings.json` stays yours.
 
 ### Q28: Where do my own hooks go?
 

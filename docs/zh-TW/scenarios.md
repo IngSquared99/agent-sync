@@ -74,17 +74,18 @@ agsy apply     # 從此它是被追蹤的正式項目
 
 ## merge 情境（Claude Code 的 settings.json）
 
-`.claude/settings.json` 是你的檔案；agsy 只擁有 `hooks` 鍵裡「command 指向 `.agsy/hooks/`」的那些條目：
+`.claude/settings.json` 是你的檔案；agsy 只擁有 `hooks` 鍵裡「`statusMessage` 以 `agsy:` 開頭、或 command 指向 `.agsy/hooks/`」的那些條目：
 
 | 情境 | status 顯示 | 處理 |
 |------|------------|------|
-| 你改了 agsy 寫進去的條目（例如把 matcher 從 Bash 改成 Edit） | 清單 B：agsy 的條目被改過 | apply 詢問後整組重建。想保留：把它搬進你自己的群組（command 不指向 `.agsy/`）或 `settings.local.json` |
+| 你改了 agsy 寫進去的條目（例如把 matcher 從 Bash 改成 Edit） | 清單 B：agsy 的條目被改過 | apply 詢問後整組重建。想保留：把它搬進你自己的群組（拿掉 `agsy:` 標記、command 不指向 `.agsy/`）或 `settings.local.json` |
 | 你在 agsy 的群組裡塞了自己的 handler | 同上（整組視為被改） | 同上——agsy 的群組永遠只含 agsy 的 handler |
 | 你自己加了群組、改了 permissions、model 等其他鍵 | 不算異常 | apply 與 clean 都原樣保留 |
 | agsy 的條目被刪、或整個檔案被刪 | ✘ 條目不見了 | `agsy apply` 復原 |
 | 檔案不是 JSON 物件（壞掉、是陣列）或是 symlink | ✘ 修正前 apply 拒絕 | 手動修好；clean 會跳過它並回報 |
 | 來源裡沒有任何 hook | 沒有東西可 merge ✔ | 檔案不存在就不建立；已存在也不改寫，apply 與 clean 皆然 |
 | `merge` 條目已從 `agsy.yaml` 移除 | ⚠ 孤兒：仍留有 agsy 條目 | apply 不碰它並持續回報；手動移除條目，或執行 `agsy clean` |
+| manifest 記錄的 merge 目標在專案外（舊設定、或複製來的專案） | ⚠ 未檢查 | agsy 不會打開專案外的檔；自行打開並移除 `agsy:` 開頭的條目 |
 | 專案搬移或 `build.out` 改名 | `agsy apply` 之後同步 ✔ | 舊群組靠 `agsy:` 標記被認出並取代 |
 
 ## 讓 apply 在建置前就停下的條件
@@ -95,7 +96,7 @@ agsy apply     # 從此它是被追蹤的正式項目
 |------|---------|------|
 | 任一來源路徑不存在 | 拒絕以殘缺清單重建 | 修好路徑（clone／掛磁碟／改錯字） |
 | 掛載點被實體路徑佔用 | 拒絕並列出；絕不代刪 | 自行搬走或刪除 |
-| workflow target 錯誤（未知工具名）、`hook.yaml` 錯誤（解析失敗、未知事件、缺 command、引用的腳本不存在） | 列出待修檔案 | 修 front matter / `hook.yaml`，或擴充 `build.tools` |
+| workflow target 錯誤（未知工具名）、`hook.yaml` 錯誤（解析失敗、未知事件、缺 command、`./` 路徑加了引號、override 索引超出或清空 command、引用的腳本不存在） | 列出待修檔案 | 修 front matter / `hook.yaml`，或擴充 `build.tools` |
 | merge 目標是 symlink 或不是 JSON 物件 | 拒絕並列出 | 手動修正 `.claude/settings.json` |
 | 掛載點被真實的 `hooks.json` 佔用 | 拒絕並列出；絕不代刪 | 把內容改寫成來源裡的 hook，再刪除該檔 |
 | 同名衝突（`on_conflict: error`） | 列出衝突組 | 改名或刪除一份 |

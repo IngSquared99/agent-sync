@@ -32,10 +32,11 @@ import (
 // HookFile is the declaration file every hook directory must contain.
 const HookFile = "hook.yaml"
 
-// OwnerMark prefixes the statusMessage set on every handler written for a
-// merged dialect (Claude Code) when hook.yaml sets none. mount.ownsGroup
-// identifies agsy groups by this mark or by a command path into the output
-// hooks directory; the mark is path-independent.
+// OwnerMark prefixes the statusMessage of every handler written for a
+// merged dialect (Claude Code); a statusMessage given in hook.yaml follows
+// the mark (see markStatus). mount.ownsGroup identifies agsy groups by this
+// mark or by a command path into the output hooks directory; the mark is
+// path-independent.
 const OwnerMark = "agsy:"
 
 // HookSpec is the parsed hook.yaml.
@@ -108,7 +109,7 @@ var dialects = map[string]dialect{
 	"claude": {
 		events: same("PreToolUse", "PostToolUse", "Stop", "SessionStart", "SessionEnd",
 			"UserPromptSubmit", "PermissionRequest", "SubagentStart", "SubagentStop",
-			"PreCompact", "PostToolUseFailure", "StopFailure"),
+			"PreCompact", "PostCompact", "PostToolUseFailure", "StopFailure"),
 		types:     set("command", "http", "mcp_tool", "prompt", "agent"),
 		shape:     shapeNested,
 		ownerMark: true,
@@ -171,7 +172,14 @@ func parseHookSpec(path string) (*HookSpec, error) {
 	if len(spec.Events) == 0 {
 		problems = append(problems, i18n.T("events is empty"))
 	}
-	for ev, groups := range spec.Events {
+	// Events are visited in a fixed order so the problem list is stable.
+	evNames := make([]string, 0, len(spec.Events))
+	for ev := range spec.Events {
+		evNames = append(evNames, ev)
+	}
+	sort.Strings(evNames)
+	for _, ev := range evNames {
+		groups := spec.Events[ev]
 		if !isGenericEvent(ev) {
 			problems = append(problems, fmt.Sprintf(i18n.T("unknown event %q, valid values: %v"), ev, genericEvents))
 			continue
@@ -186,20 +194,52 @@ func parseHookSpec(path string) (*HookSpec, error) {
 			for hi, h := range g.Hooks {
 				spec.Events[ev][gi].Hooks[hi] = normalizeYAML(h).(map[string]interface{})
 				h = spec.Events[ev][gi].Hooks[hi]
-				typ := handlerType(h)
-				if typ == "command" {
-					if c, _ := h["command"].(string); strings.TrimSpace(c) == "" {
+				if handlerType(h) == "command" {
+					c, _ := h["command"].(string)
+					if strings.TrimSpace(c) == "" {
 						problems = append(problems, fmt.Sprintf(i18n.T("handler %d of %s has no command"), hi+1, ev))
+					} else if hasQuotedLocalPath(c) {
+						problems = append(problems, fmt.Sprintf(i18n.T("handler %d of %s quotes a ./ path; write it without quotes, build adds them when the rewritten path needs quoting"), hi+1, ev))
 					}
 				}
 			}
-			for _, ov := range g.Overrides {
+			// Overrides are validated on the merged handler (group handler +
+			// override fields), the view translateHook renders: an index past
+			// the group's handlers and a command emptied by the override are
+			// both errors.
+			ovTools := make([]string, 0, len(g.Overrides))
+			for tool := range g.Overrides {
+				ovTools = append(ovTools, tool)
+			}
+			sort.Strings(ovTools)
+			for _, tool := range ovTools {
+				ov := g.Overrides[tool]
 				if ov == nil {
 					continue
 				}
+				if len(ov.Hooks) > len(g.Hooks) {
+					problems = append(problems, fmt.Sprintf(i18n.T("overrides.%s of %s lists %d handlers, but the group has only %d"), tool, ev, len(ov.Hooks), len(g.Hooks)))
+				}
 				for i, h := range ov.Hooks {
-					if h != nil {
-						ov.Hooks[i] = normalizeYAML(h).(map[string]interface{})
+					if h == nil {
+						continue
+					}
+					ov.Hooks[i] = normalizeYAML(h).(map[string]interface{})
+					if i >= len(g.Hooks) {
+						continue
+					}
+					merged := cloneHandler(g.Hooks[i])
+					for k, v := range ov.Hooks[i] {
+						merged[k] = v
+					}
+					if handlerType(merged) != "command" {
+						continue
+					}
+					c, _ := merged["command"].(string)
+					if strings.TrimSpace(c) == "" {
+						problems = append(problems, fmt.Sprintf(i18n.T("overrides.%s leaves handler %d of %s without a command"), tool, i+1, ev))
+					} else if hasQuotedLocalPath(c) {
+						problems = append(problems, fmt.Sprintf(i18n.T("overrides.%s: handler %d of %s quotes a ./ path; write it without quotes, build adds them when the rewritten path needs quoting"), tool, i+1, ev))
 					}
 				}
 			}
@@ -217,6 +257,13 @@ func handlerType(h map[string]interface{}) string {
 		return t
 	}
 	return "command"
+}
+
+// hasQuotedLocalPath reports whether a command wraps a ./ path in quotes.
+// rewriteCommand only rewrites whitespace-separated tokens, so the form is
+// rejected by parseHookSpec (build quotes rewritten paths itself).
+func hasQuotedLocalPath(cmd string) bool {
+	return strings.Contains(cmd, `"./`) || strings.Contains(cmd, `'./`)
 }
 
 // normalizeYAML converts map[interface{}]interface{} (as the YAML decoder may
@@ -256,9 +303,7 @@ func specTargets(cfg *config.Config, spec *HookSpec) ([]string, []string) {
 		targets = []string{v}
 	case []interface{}:
 		for _, x := range v {
-			if s, ok := x.(string); ok {
-				targets = append(targets, s)
-			}
+			targets = append(targets, fmt.Sprint(x)) // a non-string entry fails the tool check below
 		}
 	}
 	if len(targets) == 0 {
@@ -287,49 +332,52 @@ func resolveHooks(cfg *config.Config, p *Plan) {
 			p.RouteErrors = append(p.RouteErrors, fmt.Sprintf("%s: %v", it.From, err))
 			continue
 		}
+		// Every problem of a hook is listed, like parseHookSpec's findings.
+		var errs []string
 		targets, bad := specTargets(cfg, spec)
-		if len(bad) > 0 {
-			p.RouteErrors = append(p.RouteErrors, fmt.Sprintf(i18n.T("%s: %s refers to unknown tool %q, valid values: %v"), it.Name, TargetField, bad[0], cfg.Build.Tools))
-			continue
+		for _, t := range bad {
+			errs = append(errs, fmt.Sprintf(i18n.T("%s: %s refers to unknown tool %q, valid values: %v"), it.Name, TargetField, t, cfg.Build.Tools))
 		}
 		// overrides keys must name a tool with a dialect; tools absent from
 		// build.tools are ignored so a shared library can carry overrides for
 		// every vendor. A name without a dialect is an error.
-		badOv := ""
-		for _, groups := range spec.Events {
-			for _, g := range groups {
-				for tool := range g.Overrides {
-					if !HasHookDialect(tool) && badOv == "" {
-						badOv = tool
+		seenOv := map[string]bool{}
+		for _, ev := range genericEvents {
+			for _, g := range spec.Events[ev] {
+				for _, tool := range sortedOverrideTools(g) {
+					if !HasHookDialect(tool) && !seenOv[tool] {
+						seenOv[tool] = true
+						errs = append(errs, fmt.Sprintf(i18n.T("%s: overrides refers to unknown tool %q, valid values: %v"), it.Name, tool, config.HookTools))
 					}
 				}
 			}
-		}
-		if badOv != "" {
-			p.RouteErrors = append(p.RouteErrors, fmt.Sprintf(i18n.T("%s: overrides refers to unknown tool %q, valid values: %v"), it.Name, badOv, config.HookTools))
-			continue
 		}
 		// Every ./ path a command refers to must exist in the hook directory:
-		// a registry pointing at a missing script would fail at the worst
-		// moment (inside the tool), so it fails here instead. Override
-		// commands are checked as well.
-		missing := ""
+		// a registry pointing at a missing script would fail inside the tool,
+		// so it fails here instead. Override commands are checked as well.
+		seenMissing := map[string]bool{}
 		for _, c := range commandsOf(spec) {
 			for _, tok := range splitCommand(c) {
-				if strings.HasPrefix(tok, "./") {
-					if _, err := os.Stat(filepath.Join(it.From, filepath.FromSlash(tok[2:]))); err != nil && missing == "" {
-						missing = tok[2:]
-					}
+				if !strings.HasPrefix(tok, "./") || seenMissing[tok] {
+					continue
+				}
+				if _, err := os.Stat(filepath.Join(it.From, filepath.FromSlash(tok[2:]))); err != nil {
+					seenMissing[tok] = true
+					errs = append(errs, fmt.Sprintf(i18n.T("%s: command refers to ./%s, which does not exist in the hook directory"), it.Name, tok[2:]))
 				}
 			}
 		}
-		if missing != "" {
-			p.RouteErrors = append(p.RouteErrors, fmt.Sprintf(i18n.T("%s: command refers to ./%s, which does not exist in the hook directory"), it.Name, missing))
+		if len(errs) > 0 {
+			p.RouteErrors = append(p.RouteErrors, errs...)
 			continue
 		}
 		// Hook names double as Antigravity's top-level keys and appear in
-		// paths; keep them in the skill-name character set.
+		// paths; keep them in the skill-name character set. A name with no
+		// usable character at all becomes "hook".
 		if clean := sanitizeSkillName(it.OutName); clean != it.OutName {
+			if clean == "skill" && !strings.Contains(strings.ToLower(it.OutName), "skill") {
+				clean = "hook"
+			}
 			it.RouteNote = appendNote(it.RouteNote, fmt.Sprintf(i18n.T("directory name is normalized to %q (lowercase a-z, 0-9 and hyphens)"), clean))
 			it.OutName = clean
 		}
@@ -378,12 +426,7 @@ func commandsOf(spec *HookSpec) []string {
 					out = append(out, c)
 				}
 			}
-			var tools []string
-			for tool := range g.Overrides {
-				tools = append(tools, tool)
-			}
-			sort.Strings(tools)
-			for _, tool := range tools {
+			for _, tool := range sortedOverrideTools(g) {
 				ov := g.Overrides[tool]
 				if ov == nil {
 					continue
@@ -405,6 +448,16 @@ func commandsOf(spec *HookSpec) []string {
 		}
 	}
 	return out
+}
+
+// sortedOverrideTools lists the tools a group carries overrides for, sorted.
+func sortedOverrideTools(g HookGroup) []string {
+	tools := make([]string, 0, len(g.Overrides))
+	for tool := range g.Overrides {
+		tools = append(tools, tool)
+	}
+	sort.Strings(tools)
+	return tools
 }
 
 // HookScriptPaths lists the ./ paths that command handlers execute directly
@@ -494,11 +547,10 @@ func translateHook(spec *HookSpec, name, tool, absHookDir string) (translated, [
 				}
 				if d.ownerMark {
 					// Merged registry: every handler carries the display-only
-					// statusMessage with the OwnerMark prefix (see
-					// mount.ownsGroup). A statusMessage from hook.yaml is kept.
-					if _, has := h["statusMessage"]; !has {
-						h["statusMessage"] = OwnerMark + name
-					}
+					// statusMessage with the OwnerMark prefix; mount.ownsGroup
+					// relies on it when the command names no path into the
+					// output. A statusMessage from hook.yaml follows the mark.
+					h["statusMessage"] = markStatus(name, h["statusMessage"])
 				}
 				handlers = append(handlers, h)
 			}
@@ -536,6 +588,8 @@ func translateHook(spec *HookSpec, name, tool, absHookDir string) (translated, [
 				useMatcher := matcher != "" && (d.matcherOn == nil || d.matcherOn[ev])
 				if useMatcher {
 					grp.set("matcher", matcher)
+				} else if matcher != "" {
+					notes = append(notes, fmt.Sprintf(i18n.T("%s: %s ignores the matcher on %s; every %s fires that handler there"), name, tool, ev, ev))
 				}
 				var hs []interface{}
 				for _, h := range handlers {
@@ -550,6 +604,24 @@ func translateHook(spec *HookSpec, name, tool, absHookDir string) (translated, [
 		}
 	}
 	return out, notes
+}
+
+// markStatus builds the statusMessage of a merged handler: the OwnerMark
+// and hook name, followed by the message hook.yaml gave (if any). A message
+// already carrying the mark is returned as is (a hook.yaml copied from a
+// registry).
+func markStatus(name string, given interface{}) string {
+	mark := OwnerMark + name
+	s, _ := given.(string)
+	s = strings.TrimSpace(s)
+	switch {
+	case s == "":
+		return mark
+	case strings.HasPrefix(s, OwnerMark):
+		return s
+	default:
+		return mark + " · " + s
+	}
 }
 
 func cloneHandler(h map[string]interface{}) map[string]interface{} {
@@ -833,21 +905,34 @@ func WriteHookRegistry(cfg *config.Config, p *Plan, tool, dst string) error {
 }
 
 // LoadRegistryGroups reads a nested-shape registry (claude / codex) back as
-// event → groups, for merge. Group order inside the file is preserved.
+// event → groups, for merge. Group order inside the file is preserved. A
+// file of another shape (no "hooks" object, or an event name outside the
+// generic set, e.g. the flat dialect's camelCase names) is an error.
 func LoadRegistryGroups(path string) (RegistryGroups, error) {
 	raw, err := os.ReadFile(path)
 	if err != nil {
 		return RegistryGroups{}, err
 	}
-	var doc struct {
-		Hooks map[string][]json.RawMessage `json:"hooks"`
-	}
-	if err := json.Unmarshal(raw, &doc); err != nil {
+	var top map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &top); err != nil {
 		return RegistryGroups{}, fmt.Errorf(i18n.T("hook registry %s is not valid JSON: %w"), path, err)
+	}
+	hooksRaw, ok := top["hooks"]
+	if !ok {
+		return RegistryGroups{}, fmt.Errorf(i18n.T("hook registry %s has no \"hooks\" object; only the claude / codex registries can be merged"), path)
+	}
+	var hooks map[string][]json.RawMessage
+	if err := json.Unmarshal(hooksRaw, &hooks); err != nil {
+		return RegistryGroups{}, fmt.Errorf(i18n.T("hook registry %s is not valid JSON: %w"), path, err)
+	}
+	for ev := range hooks {
+		if !isGenericEvent(ev) {
+			return RegistryGroups{}, fmt.Errorf(i18n.T("hook registry %s uses event name %q, which is not the claude / codex shape; only those registries can be merged"), path, ev)
+		}
 	}
 	r := RegistryGroups{Groups: map[string][]interface{}{}}
 	for _, ev := range genericEvents { // native == generic for nested dialects
-		gs, ok := doc.Hooks[ev]
+		gs, ok := hooks[ev]
 		if !ok {
 			continue
 		}
