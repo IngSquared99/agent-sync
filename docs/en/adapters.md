@@ -1,17 +1,23 @@
 # Adapters
 
-An adapter is a built-in mount preset for one AI tool: which directory it reads, and which parts of the output it should see. `agsy init` turns the adapters you select into the `mount` section (and the `build.tools` list) of `agsy.yaml`. Adapters are factory templates, not a runtime dependency — the generated config is yours to edit.
+An adapter is one tool's built-in mount preset: which folder it reads and which parts of the output it should see. `agsy init` turns the adapters you pick into the `mount` section and `build.tools` of `agsy.yaml`. Adapters are templates; the generated config is yours to edit.
 
-## Built-in adapters
+## The four built-in adapters
 
-| Adapter | Mounts | Rules via | Hooks via | Notes |
-|---------|--------|-----------|-----------|-------|
-| `claude` (Claude Code) | `.claude/rules → rules`, `.claude/skills → skills`, `.claude/settings.json ⇐ hooks.claude.json` (merge) | per-file `.claude/rules/` | the `hooks` key of `settings.json` | Claude Code does not read `AGENTS.md`; its hooks have no separate file, hence merge; workflows arrive as skills, invoked with `/name` |
-| `codex` (OpenAI Codex) | `.agents/skills → skills`, `.codex/hooks.json → hooks.codex.json` | root `AGENTS.md` | `.codex/hooks.json` | two mount dirs: skills through the shared `.agents`, hooks through Codex's own `.codex` |
-| `antigravity` (Google Antigravity) | `.agents/skills → skills`, `.agents/workflows → workflows`, `.agents/hooks.json → hooks.antigravity.json` | root `AGENTS.md` | `.agents/hooks.json` | `.agents/rules` is not mounted — Antigravity reads `AGENTS.md`, so a rules directory would duplicate every rule. `/name` invokes the stub, which loads the skill; hooks sit in the already-mounted `.agents` |
-| `cursor` (Cursor) | `.agents/skills → skills`, `.cursor/hooks.json → hooks.cursor.json` | root `AGENTS.md` | `.cursor/hooks.json` | Cursor reads `.agents/skills/` natively, so it shares the `.agents` mount; hooks go through `.cursor` |
+| Adapter | Mounts | rules read from | hooks read from |
+|---------|--------|-----------------|-----------------|
+| `claude` (Claude Code) | `.claude/rules → rules`, `.claude/skills → skills`, `.claude/settings.json ⇐ hooks.claude.json` (merge) | `.claude/rules/`, one file each | the `hooks` field of `settings.json` |
+| `codex` (OpenAI Codex) | `.agents/skills → skills`, `.codex/hooks.json → hooks.codex.json` | root `AGENTS.md` | `.codex/hooks.json` |
+| `antigravity` (Google Antigravity) | `.agents/skills → skills`, `.agents/workflows → workflows`, `.agents/hooks.json → hooks.antigravity.json` | root `AGENTS.md` | `.agents/hooks.json` |
+| `cursor` (Cursor) | `.agents/skills → skills`, `.cursor/hooks.json → hooks.cursor.json` | root `AGENTS.md` | `.cursor/hooks.json` |
 
-Selecting any of `codex`, `antigravity` or `cursor` makes init add the root mount:
+Details:
+
+- Claude Code does not read `AGENTS.md`, so it gets the per-file `.claude/rules/` mount. Its hooks have no separate file, hence merge. Workflows arrive as skills, triggered with `/name`.
+- Antigravity gets no `.agents/rules` mount: it reads `AGENTS.md`, and a rules folder on top would show every rule twice. `/name` runs the stub, which loads the skill.
+- Codex and Cursor each use two folders: skills through the shared `.agents`, hooks through their own `.codex` / `.cursor`.
+
+Picking any of `codex`, `antigravity` or `cursor` adds the root mount:
 
 ```yaml
   - dir: .
@@ -19,24 +25,39 @@ Selecting any of `codex`, `antigravity` or `cursor` makes init add the root moun
       AGENTS.md: AGENTS.md
 ```
 
-Adapters sharing a directory are merged into one mount entry — selecting Codex, Antigravity and Cursor together produces a single `.agents` block (links and merge entries alike). An adapter may have several mount directories: Codex and Cursor each add one for their hooks.
+Adapters sharing a folder are merged into one mount entry: picking all three produces a single `.agents` block.
 
-## Four places for hooks
+## The shared `.agents` folder
 
-All four vendors implement hooks the same way (your script runs at checkpoints of the agent lifecycle); they differ only in where and how the registry is written. Three have a dedicated file, linked like `AGENTS.md`; only Claude Code keeps hooks inside a `settings.json` that also holds other settings, hence merge. Build translates per dialect: Claude / Codex share a shape, Antigravity wraps it in the hook name, Cursor renames events and flattens handlers. Details in the `hook.yaml` section of [Configuration](config.md).
+```
+ .agents/skills/  ◀── Codex
+                  ◀── Antigravity
+                  ◀── Cursor
+```
 
-## The shared .agents directory
+All three read `.agents/skills/` natively; one link serves them all, and every workflow's skill form reaches all three.
 
-`.agents/skills/` is an emerging cross-tool convention: Codex, Antigravity and Cursor all read it natively. agsy leans on this — one link serves three tools, and the skill form of every workflow is available to all of them.
+Two tool differences:
 
-Two per-tool caveats worth knowing:
+- A workflow's skill form carries `disable-model-invocation: true`. Claude Code and Cursor honour it: only a person can trigger the procedure. Codex and Antigravity ignore the field; the model may run the workflow on its own, so watch procedures with side effects.
+- In Antigravity, `/name` runs the stub, one indirection more; in rare cases the AI may not follow it.
 
-- `disable-model-invocation: true` (set on every workflow's skill form) is honored by Claude Code and Cursor: only a human can trigger the procedure. Codex and Antigravity ignore the field — in those tools the model may decide to run a workflow on its own, so treat side-effect-heavy workflows accordingly.
-- In Antigravity, `/name` runs the stub, which instructs the agent to load the corresponding skill. That is one extra indirection; in rare cases an agent may not follow it.
+## The four hook locations
+
+The hook mechanism is the same in all four tools (your script runs at fixed moments of the AI's loop); what differs is where the registry lives and its format:
+
+| Tool | Registry | Mounted by | Format |
+|------|----------|-----------|--------|
+| Claude Code | the `hooks` field of `.claude/settings.json` | merge | event → group → handler |
+| Codex | `.codex/hooks.json` | link | same as Claude |
+| Antigravity | `.agents/hooks.json` | link | wrapped in an extra hook-name layer |
+| Cursor | `.cursor/hooks.json` | link | different event names, flat structure |
+
+Translation details are in the `hook.yaml` section of [Configuration](config.md).
 
 ## Custom mounts
 
-A tool not on the list gets its own hand-written mount entry:
+A tool outside the four can be served with a hand-written mount entry:
 
 ```yaml
 mount:
@@ -45,22 +66,22 @@ mount:
       skills: skills
 ```
 
-`init`'s edit mode preserves custom entries as is. A link may target each category's `to` value, `AGENTS.md` or a hook registry file; see [Configuration](config.md#mount-required-at-least-one) for the validation rules. Custom tools get no hook registry yet: the dialect table lives inside agsy (`internal/build/hooks.go`) and registries are written for the four built-in tools only.
+`init`'s edit mode keeps custom entries. A link may point at a category's `to`, at `AGENTS.md` or at a registry. A custom tool gets no registry of its own: registries are produced for the four built-in tools only.
 
-## Adding a built-in adapter
+## Adding a built-in adapter (for developers)
 
-Adapters live in the `adapters/` directory of the agsy source tree, one YAML file per tool:
+Adapters live in the source tree under `adapters/`, one YAML per tool:
 
 ```yaml
 name: newtool
 display: New Tool
 needs_agents_md: true      # set when the tool reads the root AGENTS.md
-mounts:                    # several directories are fine
+mounts:
   - dir: .newtool
     links:
       skills: skills
 ```
 
-Drop a file in, rebuild, and `init` offers the new tool.
+Drop the file in, rebuild, and `init` offers the tool. For a hook registry as well, add a dialect entry in `internal/build/hooks.go` (event mapping, supported handler types, registry shape) and register the file name in `internal/config`.
 
-→ Next chapter: [Scenario Guide](scenarios.md)
+→ Next: [Scenario Guide](scenarios.md)
