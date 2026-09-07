@@ -144,7 +144,7 @@ rules 是給模型讀的文字，遵不遵守是機率性的——context 太長
 
 ### Q27：為什麼 Claude Code 用 merge 而其他三家用連結？
 
-Codex、Antigravity、Cursor 都有獨立的 `hooks.json`，整檔交給 agsy 用連結接管最乾淨。Claude Code 的 hooks 只能寫在 `.claude/settings.json` 的 `hooks` 鍵，而那份檔還裝著你的 permissions、model 等設定，整檔連結會吃掉它們，所以 agsy 只合併自己的條目進去。辨識方式跟連結一樣：command 指向 `.agsy/hooks/` 的就是 agsy 的，不需要任何標記。
+Codex、Antigravity、Cursor 都有獨立的 `hooks.json`，整檔交給 agsy 用連結接管最乾淨。Claude Code 的 hooks 只能寫在 `.claude/settings.json` 的 `hooks` 鍵，而那份檔還裝著你的 permissions、model 等設定，整檔連結會吃掉它們，所以 agsy 只合併自己的條目進去。辨識方式有兩條線索：handler 的 `statusMessage` 以 `agsy:` 開頭（build 寫出的每筆都帶），或 command 指向 `.agsy/hooks/`；符合任一就是 agsy 的。merge 目標必須在專案內，`~/.claude/settings.json` 留給你自己的 hooks。
 
 ### Q28：我自己的 hooks 要放哪？
 

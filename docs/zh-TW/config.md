@@ -188,7 +188,8 @@ events:                                        # 必填；至少一個事件
 | `PermissionRequest` | ✓ | ✓ | — | — |
 | `SubagentStart` / `SubagentStop` | ✓ | ✓ | — | `subagentStart` / `subagentStop` |
 | `PreCompact` | ✓ | ✓ | — | `preCompact` |
-| `PostCompact`、`Interrupt` | — | ✓ | — | — |
+| `PostCompact` | ✓ | ✓ | — | — |
+| `Interrupt` | — | ✓ | — | — |
 | `PostToolUseFailure` | ✓ | — | — | `postToolUseFailure` |
 | `StopFailure` | ✓ | — | — | — |
 | `PreInvocation` / `PostInvocation` | — | — | ✓ | — |
@@ -198,9 +199,9 @@ events:                                        # 必填；至少一個事件
 **翻譯規則**：
 
 1. `target` 沒列的工具不寫入該家登記表；plan 註明少了哪幾家。`target` 指到 `build.tools` 裡沒有登記表格式的工具（四家內建工具以外的名字）時 plan 也會註明：該 hook 不會送達。
-2. 該家沒有的事件、不支援的 type 略過並在 plan 註明；某家一個事件都對不上時，登記表仍會產生（內容為空），連結不會斷。
-3. `overrides.<tool>` 的 key 只要是 agsy 認識的工具即可（不在 `build.tools` 就忽略），讓共用庫帶著四家的 overrides 也能在只用一家的專案使用；完全未知的名字才是錯誤。`matcher` 覆寫群組的 matcher；`hooks[i]` 依索引覆寫第 i 個 handler 的欄位。override 把 handler 的 `type` 改成 command 以外的型別時，該家捨棄 `command` 欄位並註明。
-4. **路徑改寫**：`command` 裡每個以 `./` 開頭、以空白分隔的 token 改寫為指向 `.agsy/hooks/<name>/…` 的**絕對路徑**；字串其餘部分原樣保留（`python3 ./check.py` 成立）。command 由 shell 執行，改寫後的路徑含空白或 shell 特殊字元時**加引號**（例如專案在 `My Projects/` 底下）；一般路徑不加。引用的檔案不存在 → apply 拒絕，主 handler 與 `overrides` 皆然。`.agsy/` 不進版控、每台機器各自 apply，絕對路徑在這裡沒有可攜性問題。
+2. 該家沒有的事件、不支援的 type 略過並在 plan 註明；Antigravity 只在 `PreToolUse` / `PostToolUse` 收 matcher，其他事件的 matcher 丟棄並註明。某家一個事件都對不上時，登記表仍會產生（內容為空），連結不會斷。
+3. `overrides.<tool>` 的 key 只要是 agsy 認識的工具即可（不在 `build.tools` 就忽略），讓共用庫帶著四家的 overrides 也能在只用一家的專案使用；完全未知的名字才是錯誤。`matcher` 覆寫群組的 matcher；`hooks[i]` 依索引覆寫第 i 個 handler 的欄位，索引超出群組的 handler 數、或覆寫後 command 型 handler 的 `command` 變空，都是錯誤（apply 拒絕）。override 把 handler 的 `type` 改成 command 以外的型別時，該家捨棄 `command` 欄位並註明。
+4. **路徑改寫**：`command` 裡每個以 `./` 開頭、以空白分隔的 token 改寫為指向 `.agsy/hooks/<name>/…` 的**絕對路徑**；字串其餘部分原樣保留（`python3 ./check.py` 成立）。command 由 shell 執行，改寫後的路徑含空白或 shell 特殊字元時**加引號**（例如專案在 `My Projects/` 底下）；一般路徑不加。`./` 路徑本身**不要加引號**（`"./x.sh"` 會被拒絕）：需要時 build 會自己加。引用的檔案不存在 → apply 拒絕，主 handler 與 `overrides` 皆然。寫進登記表的是這台機器的絕對路徑，每台機器各自 apply。
 5. 其他 handler 欄位原樣透傳（三家同構）；Cursor 的攤平結構只保留 `timeout`、`failClosed`、`loop_limit`、`prompt`，其餘丟棄並回報。
 
 **agsy 只翻譯登記層，不翻譯腳本。** 四家餵給腳本的 stdin JSON 欄位不同（Claude / Codex 是 `tool_input.command`，Cursor 是另一套，Antigravity 又是一套），跨四家的腳本要自己看 `hook_event_name` 或各家欄位判斷。
@@ -224,12 +225,12 @@ events:                                        # 必填；至少一個事件
 
 Claude Code 的 hooks 沒有獨立檔，只能寫在 `.claude/settings.json` 的 `hooks` 鍵，而那份檔還裝著 permissions、model 等你自己的設定，整檔連結會吃掉它們。`merge` 的語意是「**只擁有 `hooks` 鍵裡自己的那幾筆條目**」：
 
-- **所有權判準**：`hooks` 鍵下某個 matcher 群組，只要有任一 handler 帶著純顯示欄位 `statusMessage: "agsy:<hook 名>"`（build 為 Claude Code 寫出的每個 handler 都補上，`hook.yaml` 自己有寫則保留），或 `command` 指向 `.agsy/hooks/`（目前的產物目錄，或 manifest 記錄的那個），就是 agsy 的。標記與路徑無關，所以搬移專案或改名 `build.out` 之後，先前的群組仍會被認出並取代。邏輯同 `IsManagedLink`（連結指向產物就是 agsy 的）。`hook.yaml` 自帶 `statusMessage` 的 handler 只靠路徑辨認；改名 `build.out` 之後，先前 apply 的這種群組視為別人的，需手動移除。
+- **所有權判準**：`hooks` 鍵下某個 matcher 群組，只要有任一 handler 帶著純顯示欄位 `statusMessage: "agsy:<hook 名>"`，或 `command` 指向 `.agsy/hooks/`（目前的產物目錄，或 manifest 記錄的那個），就是 agsy 的。build 為 Claude Code 寫出的每個 handler 都帶這個標記；`hook.yaml` 自己寫的 `statusMessage` 接在標記後面（`agsy:block-rm · linting`）。標記與路徑無關：搬移專案、改名 `build.out`、command 不含 `./`（例如 `npm run lint`）的群組都靠它認出並取代。邏輯同 `IsManagedLink`（連結指向產物就是 agsy 的）。
 - **apply**：移除舊的 agsy 群組、放入登記表的群組；其他鍵與其他群組原樣保留、順序不動（整份以兩空格重新縮排）。apply 之前就存在的容器——空的事件陣列、`hooks: {}`——空著也保留；apply 自己帶進來的 `hooks` 鍵與事件陣列空掉時移除（記錄在 manifest）。檔案不存在時建立並記錄「由 agsy 建立」。沒有東西可 merge、檔案裡也沒有 agsy 的東西時（狀態「閒置」），檔案既不建立也不改寫。
 - **status**：agsy 群組被改 → 列入產物端改動（apply 詢問後重建）；被刪 → 列入缺失（apply 復原）。你自己加的群組不算異常。manifest 記錄過、mount 設定已不再列出、且仍留有 agsy 群組的檔案，回報為**孤兒**：apply 不碰它，clean 清掉。
 - **clean**：移除目前與孤兒目標裡的 agsy 群組；apply 帶進來的 `hooks` 鍵與事件陣列一起移除，其他保留；檔案是 agsy 建的且變空才刪檔。閒置的目標不會被動到。
 - **拒絕**：目標是 symlink（agsy 絕不透過連結寫入）或不是 JSON 物件 → apply 前置檢查停下、clean 跳過並回報。
-- `merge` 的 value 必須是登記表名且該工具在 `build.tools`；同一 `dir` 內 `merge` 與 `links` 不得同名；`dir` 在專案外同樣需要 `outside_project: true`。
+- `merge` 的 value 只能是 `hooks.claude.json` 或 `hooks.codex.json`（merge 只讀得回這兩家的形狀），且該工具在 `build.tools`；同一 `dir` 內 `merge` 與 `links` 不得同名；同一份登記表不能同時被 link 與 merge；帶 merge 的 `dir` 必須在專案內，`outside_project: true` 不適用於 merge；agsy 只擁有專案層的檔案，`~/.claude/settings.json` 這類個人層檔案留給使用者（下段）。
 - 只有一個 `merge`、沒有 `links` 的掛載條目是合法的。
 
 你自己的 Claude hooks 請放 `.claude/settings.local.json` 或 `~/.claude/settings.json`——Claude Code 的多層設定是疊加而非覆蓋。其他三家同理：`~/.codex/hooks.json`、`~/.cursor/hooks.json`、`~/.gemini/config/`（Antigravity 官方未載明合併方式，請實測）。
@@ -248,7 +249,8 @@ Claude Code 的 hooks 沒有獨立檔，只能寫在 `.claude/settings.json` 的
 | `build.on_conflict.rules 未設定…` | 四個類別都要設策略 |
 | `build.on_conflict.hooks 未設定(v0.2.0 新增)…` | 從 v0.1 升級：加一行 `hooks: error`，或重跑 `agsy init` |
 | `build.categories.x.to 不可為 "hooks.codex.json"…` | 該名稱保留給登記表，換一個 |
-| `mount … merge.settings.json 指向 "z",但只有 hook 登記表可以合併` | merge 的目標只能是 `hooks.<tool>.json` |
+| `mount … merge.settings.json 指向 "z",但只有 claude / codex 形狀的 hook 登記表可以合併` | merge 的目標只能是 `hooks.claude.json` 或 `hooks.codex.json` |
+| `mount dir … 解析後位於專案目錄之外,卻帶有 merge 條目` | merge 目標必須在專案內；個人 hooks 放工具的個人層檔案 |
 | `mount … links.hooks.json 指向 "hooks.cursor.json",但 build.tools 未列出 "cursor"` | 把 `cursor` 加進 `build.tools`，或移除該連結 |
 | `build.tools 未設定…` | 列出工具，例如 `[claude, codex, antigravity, cursor]` |
 | `build.out(…)不在專案目錄(…)底下` | 改回專案內的專用目錄（例如 `.agsy`） |

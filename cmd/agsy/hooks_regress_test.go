@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/IngSquared99/agent-sync/internal/build"
+	"github.com/IngSquared99/agent-sync/internal/mount"
 	"github.com/IngSquared99/agent-sync/internal/prompt"
 	"github.com/IngSquared99/agent-sync/internal/state"
 )
@@ -212,8 +213,8 @@ events:
 `)
 	initAndApply(t, proj)
 	s := read(t, filepath.Join(proj, ".claude", "settings.json"))
-	if !strings.Contains(s, "my own message") || strings.Contains(s, "agsy:block-rm") {
-		t.Errorf("user statusMessage must be preserved verbatim:\n%s", s)
+	if !strings.Contains(s, "agsy:block-rm · my own message") {
+		t.Errorf("user statusMessage must follow the owner mark:\n%s", s)
 	}
 	if code := cmdApply(); code != 0 {
 		t.Fatal("second apply failed")
@@ -381,5 +382,261 @@ func TestMergeOrphanIgnoresPathsOutsideProject(t *testing.T) {
 	}
 	if !strings.Contains(read(t, filepath.Join(proj, ".claude", "settings.json")), "block-rm.sh") {
 		t.Error("clean in the copy must not touch the original's settings.json")
+	}
+}
+
+// A project whose first apply had no hooks must still merge the hooks added
+// later: "nothing to merge" is judged by the current registry, not by the
+// record of the previous (empty) write. Both a missing settings.json and an
+// existing one without agsy groups are covered.
+func TestHooksAddedAfterIdleApplyReachSettings(t *testing.T) {
+	for _, preexisting := range []bool{false, true} {
+		proj := newProject(t)
+		chdir(t, proj)
+		settings := filepath.Join(proj, ".claude", "settings.json")
+		if preexisting {
+			write(t, settings, "{\"permissions\": {}}\n")
+		}
+		prompt.AssumeYes = true
+		t.Cleanup(func() { prompt.AssumeYes = false })
+		if code := cmdInit([]string{"./repo-ai-lib"}); code != 0 {
+			t.Fatal("init failed")
+		}
+		if code := cmdApply(); code != 0 {
+			t.Fatal("first apply failed")
+		}
+		if !preexisting {
+			if _, err := os.Stat(settings); err == nil {
+				t.Fatal("no hooks: settings.json must not be created")
+			}
+		}
+		write(t, filepath.Join(proj, "repo-ai-lib", "hooks", "block-rm", "hook.yaml"), e2eHook)
+		write(t, filepath.Join(proj, "repo-ai-lib", "hooks", "block-rm", "block-rm.sh"), "#!/bin/sh\nexit 2\n")
+		if code := cmdApply(); code != 0 {
+			t.Fatal("second apply failed")
+		}
+		if !strings.Contains(read(t, settings), "block-rm.sh") {
+			t.Errorf("preexisting=%v: hook added after an idle apply did not reach settings.json:\n%s", preexisting, read(t, settings))
+		}
+		// and removing it again empties the file back out
+		os.RemoveAll(filepath.Join(proj, "repo-ai-lib", "hooks"))
+		if code := cmdApply(); code != 0 {
+			t.Fatal("third apply failed")
+		}
+		if strings.Contains(read(t, settings), "block-rm.sh") {
+			t.Errorf("preexisting=%v: removed hook still in settings.json", preexisting)
+		}
+	}
+}
+
+// A handler with its own statusMessage and a command naming no ./ path
+// still carries the owner mark, so it is replaced on every apply instead of
+// being re-added.
+func TestHooksMarkedHandlerWithoutLocalPathNotDuplicated(t *testing.T) {
+	proj := hookProjectAt(t, "p")
+	write(t, filepath.Join(proj, "repo-ai-lib", "hooks", "block-rm", "hook.yaml"), `description: x
+events:
+  PreToolUse:
+    - matcher: Bash
+      hooks:
+        - command: npm run lint
+          statusMessage: linting
+`)
+	initAndApply(t, proj)
+	for i := 0; i < 2; i++ {
+		if code := cmdApply(); code != 0 {
+			t.Fatal("apply failed")
+		}
+	}
+	s := read(t, filepath.Join(proj, ".claude", "settings.json"))
+	if n := strings.Count(s, "npm run lint"); n != 1 {
+		t.Errorf("group must be replaced, not accumulated (%d copies):\n%s", n, s)
+	}
+	if !strings.Contains(s, "agsy:block-rm · linting") {
+		t.Errorf("owner mark must precede the user's statusMessage:\n%s", s)
+	}
+}
+
+// An absolute path that is not one of the hook's own scripts (an
+// interpreter) does not make the merge target Stale.
+func TestHooksInterpreterPathIsNotStale(t *testing.T) {
+	proj := hookProjectAt(t, "p")
+	write(t, filepath.Join(proj, "repo-ai-lib", "hooks", "block-rm", "hook.yaml"), `description: x
+events:
+  PreToolUse:
+    - matcher: Bash
+      hooks:
+        - command: /usr/bin/env sh ./block-rm.sh
+`)
+	initAndApply(t, proj)
+	cfg, err := loadConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	m, err := build.LoadManifest(cfg.OutDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	plans, err := mount.InspectMerge(cfg, m.Merges)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, p := range plans {
+		if p.State != mount.MergeClean {
+			t.Errorf("right after apply, state = %d (%s), want Clean", p.State, p.Note)
+		}
+	}
+}
+
+// A ./ path wrapped in quotes is refused up front: the existence check
+// would accept it while the rewrite would leave it relative.
+func TestHooksQuotedLocalPathRefused(t *testing.T) {
+	proj := hookProjectAt(t, "p")
+	write(t, filepath.Join(proj, "repo-ai-lib", "hooks", "block-rm", "hook.yaml"), `description: x
+events:
+  PreToolUse:
+    - matcher: Bash
+      hooks:
+        - command: '"./block-rm.sh" --strict'
+`)
+	chdir(t, proj)
+	prompt.AssumeYes = true
+	defer func() { prompt.AssumeYes = false }()
+	if code := cmdInit([]string{"./repo-ai-lib"}); code != 0 {
+		t.Fatal("init failed")
+	}
+	out := captureStdout(t, func() {
+		if code := cmdApply(); code == 0 {
+			t.Error("apply must refuse a quoted ./ path")
+		}
+	})
+	if !strings.Contains(out, "quotes a ./ path") {
+		t.Errorf("the refusal must name the quoted path:\n%s", out)
+	}
+}
+
+// Override problems are reported, never dropped: an index past the group's
+// handlers, and a command emptied by the override.
+func TestHooksOverrideProblemsReported(t *testing.T) {
+	proj := hookProjectAt(t, "p")
+	write(t, filepath.Join(proj, "repo-ai-lib", "hooks", "block-rm", "hook.yaml"), `description: x
+events:
+  PreToolUse:
+    - matcher: Bash
+      hooks:
+        - command: ./block-rm.sh
+      overrides:
+        cursor:
+          hooks:
+            - {}
+            - command: ./does-not-exist.sh
+        codex:
+          hooks:
+            - command: ""
+`)
+	chdir(t, proj)
+	prompt.AssumeYes = true
+	defer func() { prompt.AssumeYes = false }()
+	if code := cmdInit([]string{"./repo-ai-lib"}); code != 0 {
+		t.Fatal("init failed")
+	}
+	out := captureStdout(t, func() { cmdPlan() })
+	for _, want := range []string{"overrides.cursor of PreToolUse lists 2 handlers, but the group has only 1", "overrides.codex leaves handler 1 of PreToolUse without a command"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("plan must report %q:\n%s", want, out)
+		}
+	}
+}
+
+// A mount or merge failure after the build must not lose the previous
+// merge records (created flag, containers agsy added): the manifest is
+// written with them right after the build. The failure here is a .claude
+// that became a plain file, which breaks the mount step.
+func TestHooksMergeRecordsSurviveMergeFailure(t *testing.T) {
+	proj := hookProjectAt(t, "p")
+	initAndApply(t, proj)
+	cfg, err := loadConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	before, err := build.LoadManifest(cfg.OutDir())
+	if err != nil || len(before.Merges) != 1 || !before.Merges[0].Created {
+		t.Fatalf("expected one created merge record, got %+v (%v)", before.Merges, err)
+	}
+	claudeDir := filepath.Join(proj, ".claude")
+	if err := os.RemoveAll(claudeDir); err != nil {
+		t.Fatal(err)
+	}
+	write(t, claudeDir, "not a directory\n")
+	if code := cmdApply(); code == 0 {
+		t.Fatal("apply should fail when .claude is a plain file")
+	}
+	after, err := build.LoadManifest(cfg.OutDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(after.Merges) != 1 || !after.Merges[0].Created || !after.Merges[0].AddedKey {
+		t.Errorf("merge record lost after a failed merge step: %+v", after.Merges)
+	}
+}
+
+// A merge record outside the project (untrusted, never opened) is reported
+// by status and apply as unchecked, and kept on the manifest.
+func TestForeignMergeRecordReported(t *testing.T) {
+	proj := hookProjectAt(t, "p")
+	initAndApply(t, proj)
+	cfg, err := loadConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	m, err := build.LoadManifest(cfg.OutDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	outside := filepath.Join(t.TempDir(), ".claude", "settings.json")
+	m.Merges = append(m.Merges, build.MergeRecord{Path: outside, Key: "hooks", Hash: "x"})
+	if err := build.WriteManifest(cfg.OutDir(), m); err != nil {
+		t.Fatal(err)
+	}
+	out := captureStdout(t, func() {
+		if code := cmdStatus(false); code == 0 {
+			t.Error("status must exit non-zero while a foreign merge record is unchecked")
+		}
+	})
+	if !strings.Contains(out, "were not checked") || !strings.Contains(out, outside) {
+		t.Errorf("status must name the unchecked foreign record:\n%s", out)
+	}
+	out = captureStdout(t, func() {
+		if code := cmdApply(); code != 0 {
+			t.Error("apply failed")
+		}
+	})
+	if !strings.Contains(out, "were not checked") {
+		t.Errorf("apply must repeat the warning:\n%s", out)
+	}
+	after, _ := build.LoadManifest(cfg.OutDir())
+	found := false
+	for _, r := range after.Merges {
+		if filepath.Clean(r.Path) == filepath.Clean(outside) {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("foreign record must stay on the manifest: %+v", after.Merges)
+	}
+}
+
+// plan prints a hook's description under its line.
+func TestPlanShowsHookDescription(t *testing.T) {
+	proj := hookProjectAt(t, "p")
+	chdir(t, proj)
+	prompt.AssumeYes = true
+	defer func() { prompt.AssumeYes = false }()
+	if code := cmdInit([]string{"./repo-ai-lib"}); code != 0 {
+		t.Fatal("init failed")
+	}
+	out := captureStdout(t, func() { cmdPlan() })
+	if !strings.Contains(out, "block rm") {
+		t.Errorf("plan must show the hook description:\n%s", out)
 	}
 }

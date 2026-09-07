@@ -40,11 +40,12 @@ vulnerability:
   content.
 - **Merge touches one key of one file, never through a link.** The only
   user-owned file agsy writes is a merge target (Claude Code's
-  `.claude/settings.json`): it rewrites the `hooks` key's entries whose
-  command points into the output and preserves everything else; a target
-  that is a symbolic link or not a JSON object is refused. Merge targets
-  outside the project require the same `outside_project: true` opt-in as
-  links.
+  `.claude/settings.json`): it rewrites the `hooks` key's entries that carry
+  the `agsy:` status mark or whose command points into the output, and
+  preserves everything else; a target that is a symbolic link or not a JSON
+  object is refused. Merge targets must lie inside the project —
+  `outside_project: true` does not extend to merge — and recorded merge
+  targets outside the project are never opened.
 - **Hook registries carry absolute paths into the output only.** A `command`
   in a registry is rewritten from a `./` path inside the hook directory and
   must exist there at build time; nothing outside the output is referenced.

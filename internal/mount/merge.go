@@ -48,7 +48,6 @@ type MergePlan struct {
 	Name     string // file name inside dir
 	FilePath string // absolute path of the target file
 	Registry string // absolute path of the registry file in the output
-	Tool     string
 	State    MergeState
 	Created  bool   // per the manifest: the file was created by agsy
 	Owned    int    // agsy groups currently in the file
@@ -109,13 +108,12 @@ func InspectMerge(cfg *config.Config, records []build.MergeRecord) ([]MergePlan,
 				Dir: m.Dir, Name: name,
 				FilePath: filepath.Join(mdir, name),
 				Registry: filepath.Join(out, filepath.FromSlash(sub)),
-				Tool:     config.RegistryTool(sub),
 			}
 			rec := findRecord(records, mp.FilePath)
 			if rec != nil {
 				mp.Created = rec.Created
 			}
-			inspectMerge(&mp, prefixes, rec)
+			inspectMerge(&mp, cfg.Build.Categories["hooks"].To, prefixes, rec)
 			plans = append(plans, mp)
 		}
 	}
@@ -132,21 +130,25 @@ func findRecord(records []build.MergeRecord, path string) *build.MergeRecord {
 	return rec
 }
 
-func inspectMerge(mp *MergePlan, prefixes []string, rec *build.MergeRecord) {
-	// What the last apply wrote (or, before any apply, what the registry
-	// holds). An empty set means "nothing to merge": a missing file or a
-	// file without agsy groups is then Idle, not a gap.
-	want := ""
+func inspectMerge(mp *MergePlan, hooksTo string, prefixes []string, rec *build.MergeRecord) {
+	// have: what the registry holds now — decides whether there is anything
+	// to merge (a registry without groups makes a missing file, or a file
+	// without agsy groups, Idle rather than a gap). want: what the last
+	// apply wrote per the manifest — decides Clean vs Modified; before any
+	// apply the registry stands in.
+	have := ""
+	if r, err := build.LoadRegistryGroups(mp.Registry); err == nil {
+		have = build.CanonicalHash(toRaw(r))
+	}
+	want := have
 	if rec != nil {
 		want = rec.Hash
-	} else if r, err := build.LoadRegistryGroups(mp.Registry); err == nil {
-		want = build.CanonicalHash(toRaw(r))
 	}
 	fi, err := os.Lstat(mp.FilePath)
 	switch {
 	case err != nil:
 		mp.State = MergeMissing
-		if want == emptyHash {
+		if have == emptyHash {
 			mp.State = MergeIdle
 		}
 		return
@@ -170,14 +172,14 @@ func inspectMerge(mp *MergePlan, prefixes []string, rec *build.MergeRecord) {
 	}
 	if mp.Owned == 0 {
 		mp.State = MergeAbsent
-		if want == emptyHash {
+		if have == emptyHash {
 			mp.State = MergeIdle
 		}
 		return
 	}
 	if want == "" || build.CanonicalHash(owned) == want {
 		mp.State = MergeClean
-		if hasStalePath(owned, prefixes[0]) {
+		if hasStalePath(owned, hooksTo, prefixes) {
 			mp.State = MergeStale
 			mp.Note = i18n.T("agsy entries point at a previous output path")
 		}
@@ -187,23 +189,38 @@ func inspectMerge(mp *MergePlan, prefixes []string, rec *build.MergeRecord) {
 	mp.Note = i18n.T("agsy entries in the hooks key were modified")
 }
 
-// hasStalePath reports whether any owned command handler names an absolute
-// path outside cur, the current output hooks directory.
-func hasStalePath(owned map[string][]json.RawMessage, cur string) bool {
-	prefix := filepath.Clean(cur) + string(filepath.Separator)
+// hasStalePath reports whether an owned command handler names a script
+// inside a previous output hooks directory: a path under one of the
+// directories the manifest recorded (prefixes[1:]), or an absolute path
+// outside the current directory (prefixes[0]) whose tail is
+// <hooksTo>/<hook name>/… (hook name from the handler's OwnerMark; covers a
+// renamed build.out with no record left). Other absolute paths (an
+// interpreter such as /usr/bin/env) do not count.
+func hasStalePath(owned map[string][]json.RawMessage, hooksTo string, prefixes []string) bool {
+	cur := filepath.Clean(prefixes[0]) + string(filepath.Separator)
 	for _, gs := range owned {
 		for _, g := range gs {
 			var x struct {
 				Hooks []struct {
-					Command string `json:"command"`
+					Command       string `json:"command"`
+					StatusMessage string `json:"statusMessage"`
 				} `json:"hooks"`
 			}
 			if err := json.Unmarshal(g, &x); err != nil {
 				continue
 			}
 			for _, h := range x.Hooks {
+				name := hookNameOf(h.StatusMessage)
 				for _, tok := range build.SplitCommand(h.Command) {
-					if filepath.IsAbs(tok) && !hasPathPrefix(tok, prefix) {
+					if !filepath.IsAbs(tok) || hasPathPrefix(tok, cur) {
+						continue
+					}
+					for _, old := range prefixes[1:] {
+						if hasPathPrefix(tok, filepath.Clean(old)+string(filepath.Separator)) {
+							return true
+						}
+					}
+					if name != "" && strings.Contains(filepath.ToSlash(tok), "/"+hooksTo+"/"+name+"/") {
 						return true
 					}
 				}
@@ -211,6 +228,19 @@ func hasStalePath(owned map[string][]json.RawMessage, cur string) bool {
 		}
 	}
 	return false
+}
+
+// hookNameOf extracts the hook name from an OwnerMark statusMessage
+// ("agsy:<name>" or "agsy:<name> · message"); "" when the mark is absent.
+func hookNameOf(status string) string {
+	if !strings.HasPrefix(status, build.OwnerMark) {
+		return ""
+	}
+	rest := strings.TrimPrefix(status, build.OwnerMark)
+	if i := strings.IndexAny(rest, " \t"); i >= 0 {
+		rest = rest[:i]
+	}
+	return rest
 }
 
 // ownedGroups returns the agsy-owned groups of a merge target by event. An
@@ -242,13 +272,15 @@ func ownedGroups(path string, prefixes []string) (map[string][]json.RawMessage, 
 // MergeOrphans lists recorded merge targets the mount config no longer
 // names that still hold agsy groups. Reported by status, stripped by clean,
 // never touched by apply (same rule as orphaned links). Record paths are
-// untrusted: only paths inside the project directory are considered (a
+// untrusted: only paths inside the project directory are inspected (a
 // copied project must not reach into the original's files), and a file is
-// listed only when it verifiably holds agsy groups.
-func MergeOrphans(cfg *config.Config, records []build.MergeRecord) ([]string, error) {
+// listed only when it verifiably holds agsy groups. Recorded paths outside
+// the project are never opened and come back as foreign, for status to
+// report as unchecked.
+func MergeOrphans(cfg *config.Config, records []build.MergeRecord) (orphans, foreign []string, err error) {
 	plans, err := InspectMerge(cfg, records)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	current := map[string]bool{}
 	for _, p := range plans {
@@ -256,14 +288,17 @@ func MergeOrphans(cfg *config.Config, records []build.MergeRecord) ([]string, er
 	}
 	prefixes := ownerPrefixes(cfg, records)
 	base := filepath.Clean(cfg.BaseDir) + string(filepath.Separator)
-	var out []string
 	seen := map[string]bool{}
 	for _, r := range records {
 		p := filepath.Clean(r.Path)
-		if r.Key != MergeKey || current[p] || seen[p] || !hasPathPrefix(p, base) {
+		if r.Key != MergeKey || current[p] || seen[p] {
 			continue
 		}
 		seen[p] = true
+		if !hasPathPrefix(p, base) {
+			foreign = append(foreign, p)
+			continue
+		}
 		fi, err := os.Lstat(p)
 		if err != nil || !fi.Mode().IsRegular() {
 			continue
@@ -273,11 +308,12 @@ func MergeOrphans(cfg *config.Config, records []build.MergeRecord) ([]string, er
 			continue
 		}
 		if len(owned) > 0 {
-			out = append(out, p)
+			orphans = append(orphans, p)
 		}
 	}
-	sort.Strings(out)
-	return out, nil
+	sort.Strings(orphans)
+	sort.Strings(foreign)
+	return orphans, foreign, nil
 }
 
 func toRaw(r build.RegistryGroups) map[string][]json.RawMessage {
@@ -419,7 +455,7 @@ func ApplyMerge(cfg *config.Config, plans []MergePlan, records []build.MergeReco
 		_, exists := os.Lstat(p.FilePath)
 		created := exists != nil || p.Created
 		prior := shellsOf(findRecord(records, p.FilePath))
-		if p.State == MergeIdle || (len(incoming) == 0 && (exists != nil || p.Owned == 0)) {
+		if len(incoming) == 0 && (exists != nil || p.Owned == 0) {
 			// Nothing to merge and nothing of agsy's in the file: the file
 			// is neither created nor rewritten.
 			out = append(out, build.MergeRecord{Path: p.FilePath, Key: MergeKey, Hash: emptyHash, Created: p.Created, HooksDir: hooksAbs})
@@ -658,7 +694,7 @@ func RemoveMerge(cfg *config.Config, records []build.MergeRecord) (cleaned, dele
 			return cleaned, deleted, skipped, e
 		}
 	}
-	orphans, err := MergeOrphans(cfg, records)
+	orphans, _, err := MergeOrphans(cfg, records)
 	if err != nil {
 		return cleaned, deleted, skipped, err
 	}
