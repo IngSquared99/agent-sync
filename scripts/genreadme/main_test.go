@@ -24,6 +24,8 @@ func TestTransform(t *testing.T) {
 		"",
 		"### Subsection",
 		"",
+		"![demo](../assets/demo.en.gif)",
+		"",
 		"→ Next chapter: [Commands](commands.md)",
 		"",
 	}, "\n")
@@ -58,6 +60,9 @@ func TestTransform(t *testing.T) {
 	assertContains("](" + site + "/en/config)")
 	assertNotContains("some-anchor")
 	assertNotContains("](config.md")
+	// Chapter-relative image paths become repository-relative ones.
+	assertContains("![demo](docs/assets/demo.en.gif)")
+	assertNotContains("](../assets/")
 	// Output ends with exactly one trailing newline.
 	if !strings.HasSuffix(got, "\n") || strings.HasSuffix(got, "\n\n") {
 		t.Errorf("output must end with exactly one newline, got %q", got[len(got)-4:])
