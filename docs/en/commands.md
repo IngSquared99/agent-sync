@@ -122,6 +122,7 @@ All must pass before any confirmation:
 
 ```
  empty .agsy/
+   → write a manifest holding only the previous merge records
    → copy rules, skills and hooks as they are
    → convert workflows (skill + stub)
    → assemble AGENTS.md
@@ -131,7 +132,7 @@ All must pass before any confirmation:
    → merge (hooks.claude.json → the hooks field of .claude/settings.json)
 ```
 
-If mount or merge fails, the build result stays intact; fix the cause and rerun `agsy apply`.
+If mount or merge fails, the build result stays intact; fix the cause and rerun `agsy apply`. If the build itself fails, the manifest written first keeps the merge records (which file agsy created, which containers it added), so a later clean still knows what is agsy's.
 
 ### 4. Orphan report
 
@@ -143,7 +144,7 @@ Read-only. Prints the same two lists as apply, plus mount state:
 
 - **List A**: source → output: content changes, additions, deletions, and missing outputs (the output copy was deleted; apply rebuilds it). "Source path missing" and "file deleted" are told apart.
 - **List B**: artifact side: everything the next apply would discard, each with where to move it.
-- **Mounts**: the state of each link (ok / missing / wrong target or broken / occupied / orphan) and each merge target (in sync / nothing to merge / agsy entries edited / entries missing / not a JSON object / orphan / outside the project, unchecked).
+- **Mounts**: the state of each link (ok / missing / wrong target or broken / occupied / orphan) and each merge target (in sync / nothing to merge / agsy entries edited / entries missing / not a JSON object / orphan).
 - **Summary**: `source changes N │ artifact-side changes N │ missing outputs N │ mount anomalies N` and the suggested next step.
 
 Exit code `0` = fully in sync, `1` = any gap. Suited to CI and git hooks.
@@ -152,7 +153,7 @@ Exit code `0` = fully in sync, `1` = any gap. Suited to CI and git hooks.
 
 Removes what agsy created in this project, after confirmation, in order:
 
-1. agsy's hook entries are removed from merge targets, orphaned ones included. Only agsy's entries and the containers apply introduced go; a file agsy created that ends up empty is deleted; a file without agsy entries is not touched.
+1. agsy's hook entries are removed from merge targets, orphaned ones included. Only agsy's entries and the containers apply introduced go; a file agsy created that holds nothing else (emptied now, or by an earlier apply) is deleted; a file agsy did not create is never deleted, and one without agsy entries is not rewritten.
 2. Mount links (including the root `AGENTS.md` and the `hooks.json` links) and orphaned links recorded in the manifest are removed; each is verified to be a link into the output first. Real folders and files are skipped and reported. Mount folders left empty are removed too.
 3. The whole output folder is deleted.
 

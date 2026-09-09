@@ -400,7 +400,7 @@ func TestInspectMergeIgnoresForeignManifestRecords(t *testing.T) {
 	cfg, settings, _ := setupMerge(t)
 	writeSettings(t, settings, `{}`)
 	// a record for another path must not influence this target
-	plans, _ := InspectMerge(cfg, []build.MergeRecord{{Path: "/elsewhere/settings.json", Key: MergeKey, Hash: "x", Created: true}})
+	plans, _ := InspectMerge(cfg, []build.MergeRecord{{Path: "elsewhere/settings.json", Key: MergeKey, Hash: "x", Created: true}})
 	if plans[0].Created {
 		t.Error("created flag must come from a record for this exact path")
 	}
@@ -452,7 +452,7 @@ func TestMergeRecordedHooksDirStillOwned(t *testing.T) {
 	group := `{"matcher":"Bash","hooks":[{"type":"command","command":` + jsonStr(filepath.Join(old, "block-rm", "block-rm.sh")) + `}]}`
 	writeSettings(t, settings, `{"hooks":{"PreToolUse":[`+group+`]}}`)
 	hash := build.CanonicalHash(map[string][]json.RawMessage{"PreToolUse": {json.RawMessage(group)}})
-	recs := []build.MergeRecord{{Path: settings, Key: MergeKey, Hash: hash, Created: false, HooksDir: old}}
+	recs := []build.MergeRecord{{Path: ".claude/settings.json", Key: MergeKey, Hash: hash, Created: false, HooksDir: ".old-out/hooks"}}
 	plans, err := InspectMerge(cfg, recs)
 	if err != nil {
 		t.Fatal(err)
@@ -465,8 +465,43 @@ func TestMergeRecordedHooksDirStillOwned(t *testing.T) {
 	if strings.Contains(string(raw), ".old-out") || strings.Count(string(raw), "block-rm.sh") != 1 {
 		t.Errorf("old group must be replaced, not kept beside the new one:\n%s", raw)
 	}
-	if recs[0].HooksDir != filepath.Join(cfg.OutDir(), "hooks") {
-		t.Errorf("record must carry the current hooks dir: %q", recs[0].HooksDir)
+	if recs[0].HooksDir != ".agsy/hooks" || recs[0].Path != ".claude/settings.json" {
+		t.Errorf("record must carry project-relative paths: %+v", recs[0])
+	}
+}
+
+// A recorded hooks directory is accepted as an ownership prefix only inside
+// the project: a record escaping it cannot claim the user's groups.
+func TestOwnerPrefixesIgnoreDirOutsideProject(t *testing.T) {
+	cfg, _, _ := setupMerge(t)
+	recs := []build.MergeRecord{{Path: ".claude/settings.json", Key: MergeKey, HooksDir: "../usr"}}
+	got := ownerPrefixes(cfg, recs)
+	if len(got) != 1 {
+		t.Errorf("prefix outside the project must be ignored, got %v", got)
+	}
+	recs[0].HooksDir = ".old-out/hooks"
+	got = ownerPrefixes(cfg, recs)
+	if len(got) != 2 || got[1] != filepath.Join(cfg.BaseDir, ".old-out", "hooks") {
+		t.Errorf("relative prefix must resolve inside the project, got %v", got)
+	}
+}
+
+// A JSON object with a repeated key has no single value agsy could keep or
+// replace; the file is Invalid.
+func TestMergeDuplicateKeyIsInvalid(t *testing.T) {
+	cfg, settings, _ := setupMerge(t)
+	writeSettings(t, settings, `{"hooks":{"PreToolUse":[{"hooks":[{"type":"command","command":"echo a"}]}],"PreToolUse":[]}}`)
+	plans, err := InspectMerge(cfg, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if plans[0].State != MergeInvalid || !strings.Contains(plans[0].Note, "more than once") {
+		t.Errorf("duplicate key must make the target Invalid, got %v %q", plans[0].State, plans[0].Note)
+	}
+	writeSettings(t, settings, `{"a":1,"a":2}`)
+	plans, _ = InspectMerge(cfg, nil)
+	if plans[0].State != MergeInvalid {
+		t.Errorf("top-level duplicate key must make the target Invalid, got %v", plans[0].State)
 	}
 }
 
@@ -580,20 +615,16 @@ func TestHasStalePath(t *testing.T) {
 	}
 }
 
-// Recorded merge targets outside the project are never opened, but they
-// are reported as foreign rather than dropped.
-func TestMergeOrphansReportsForeignRecords(t *testing.T) {
+// A record whose path escapes the project (LoadManifest rejects such a
+// manifest; this guards the function on its own) is never inspected.
+func TestMergeOrphansIgnoresEscapingRecord(t *testing.T) {
 	cfg, _, _ := setupMerge(t)
-	outside := filepath.Join(t.TempDir(), ".claude", "settings.json")
-	recs := []build.MergeRecord{{Path: outside, Key: MergeKey, Hash: "x"}}
-	orphans, foreign, err := MergeOrphans(cfg, recs)
+	recs := []build.MergeRecord{{Path: "../outside/settings.json", Key: MergeKey, Hash: "x"}}
+	orphans, err := MergeOrphans(cfg, recs)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(orphans) != 0 {
-		t.Errorf("outside path must not be inspected as an orphan: %v", orphans)
-	}
-	if len(foreign) != 1 || foreign[0] != filepath.Clean(outside) {
-		t.Errorf("outside path must be reported as foreign: %v", foreign)
+		t.Errorf("escaping path must not be inspected as an orphan: %v", orphans)
 	}
 }

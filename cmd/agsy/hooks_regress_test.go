@@ -580,9 +580,9 @@ func TestHooksMergeRecordsSurviveMergeFailure(t *testing.T) {
 	}
 }
 
-// A merge record outside the project (untrusted, never opened) is reported
-// by status and apply as unchecked, and kept on the manifest.
-func TestForeignMergeRecordReported(t *testing.T) {
+// Merge records are project-relative; a manifest holding an absolute or
+// escaping record path was tampered with and is refused as a whole.
+func TestManifestRejectsNonLocalMergePath(t *testing.T) {
 	proj := hookProjectAt(t, "p")
 	initAndApply(t, proj)
 	cfg, err := loadConfig()
@@ -593,36 +593,175 @@ func TestForeignMergeRecordReported(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	outside := filepath.Join(t.TempDir(), ".claude", "settings.json")
-	m.Merges = append(m.Merges, build.MergeRecord{Path: outside, Key: "hooks", Hash: "x"})
-	if err := build.WriteManifest(cfg.OutDir(), m); err != nil {
+	for _, bad := range []string{"/usr", "../usr", ""} {
+		m.Merges[0].HooksDir = bad
+		if bad == "" {
+			m.Merges[0].Path = ""
+		}
+		if err := build.WriteManifest(cfg.OutDir(), m); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := build.LoadManifest(cfg.OutDir()); err == nil || !strings.Contains(err.Error(), "invalid merge record path") {
+			t.Errorf("record path %q must be refused, got %v", bad, err)
+		}
+	}
+}
+
+// After the project is moved, the project-relative records still resolve:
+// apply rewrites the stale paths and status is clean afterwards, with no
+// record left pointing at the old location.
+func TestHooksMovedProjectRecordsFollow(t *testing.T) {
+	root := t.TempDir()
+	proj := filepath.Join(root, "before")
+	if err := os.MkdirAll(proj, 0o755); err != nil {
 		t.Fatal(err)
 	}
+	write(t, filepath.Join(proj, "repo-ai-lib", "rules", "python-style.md"), "# style\n")
+	write(t, filepath.Join(proj, "repo-ai-lib", "hooks", "block-rm", "hook.yaml"), e2eHook)
+	write(t, filepath.Join(proj, "repo-ai-lib", "hooks", "block-rm", "block-rm.sh"), "#!/bin/sh\nexit 2\n")
+	initAndApply(t, proj)
+	os.Chdir(root)
+	moved := filepath.Join(root, "after")
+	if err := os.Rename(proj, moved); err != nil {
+		t.Fatal(err)
+	}
+	chdir(t, moved)
+	if code := cmdApply(); code != 0 {
+		t.Fatal("apply after move failed")
+	}
 	out := captureStdout(t, func() {
-		if code := cmdStatus(false); code == 0 {
-			t.Error("status must exit non-zero while a foreign merge record is unchecked")
+		if code := cmdStatus(false); code != 0 {
+			t.Error("status must be clean after apply in the moved project")
 		}
 	})
-	if !strings.Contains(out, "were not checked") || !strings.Contains(out, outside) {
-		t.Errorf("status must name the unchecked foreign record:\n%s", out)
+	if strings.Contains(out, "outside the project") {
+		t.Errorf("no record may point at the old location:\n%s", out)
 	}
-	out = captureStdout(t, func() {
-		if code := cmdApply(); code != 0 {
-			t.Error("apply failed")
+	if m := read(t, filepath.Join(moved, ".agsy", ".agsy-manifest.json")); strings.Contains(m, "before") {
+		t.Errorf("manifest still names the old location:\n%s", m)
+	}
+}
+
+// A tampered hooks directory in the manifest cannot claim the user's own
+// groups: the manifest is refused, and clean still strips agsy's groups (by
+// their mark) while the user's survive.
+func TestHooksTamperedHooksDirDoesNotClaimUserGroups(t *testing.T) {
+	proj := hookProjectAt(t, "p")
+	settings := filepath.Join(proj, ".claude", "settings.json")
+	write(t, settings, "{\n  \"hooks\": {\"Stop\": [{\"hooks\": [{\"type\": \"command\", \"command\": \"/usr/bin/env echo bye\"}]}]}\n}\n")
+	initAndApply(t, proj)
+	mp := filepath.Join(proj, ".agsy", ".agsy-manifest.json")
+	write(t, mp, strings.Replace(read(t, mp), `"hooksDir": ".agsy/hooks"`, `"hooksDir": "../../usr"`, 1))
+	if code := cmdClean(); code != 0 {
+		t.Fatal("clean failed")
+	}
+	s := read(t, settings)
+	if !strings.Contains(s, "echo bye") {
+		t.Errorf("the user's group must survive clean:\n%s", s)
+	}
+	if strings.Contains(s, "agsy:") {
+		t.Errorf("agsy's own group must still be stripped:\n%s", s)
+	}
+}
+
+// Removing every hook from the sources leaves the settings.json agsy
+// created as an empty object; clean deletes it (it holds nothing of the
+// user's), matching the case where clean runs while the hooks still exist.
+func TestCleanDeletesCreatedEmptyIdleTarget(t *testing.T) {
+	proj := hookProjectAt(t, "p")
+	initAndApply(t, proj)
+	settings := filepath.Join(proj, ".claude", "settings.json")
+	if err := os.RemoveAll(filepath.Join(proj, "repo-ai-lib", "hooks")); err != nil {
+		t.Fatal(err)
+	}
+	if code := cmdApply(); code != 0 {
+		t.Fatal("apply without hooks failed")
+	}
+	if s := read(t, settings); strings.TrimSpace(s) != "{}" {
+		t.Fatalf("apply must leave an empty object, got %q", s)
+	}
+	if code := cmdClean(); code != 0 {
+		t.Fatal("clean failed")
+	}
+	if _, err := os.Lstat(settings); !os.IsNotExist(err) {
+		t.Errorf("settings.json created by agsy and left empty must be deleted by clean, stat err=%v", err)
+	}
+}
+
+// A file the user created stays through the same sequence, even when it
+// ends up empty.
+func TestCleanKeepsUserEmptyIdleTarget(t *testing.T) {
+	proj := hookProjectAt(t, "p")
+	settings := filepath.Join(proj, ".claude", "settings.json")
+	write(t, settings, "{}\n")
+	initAndApply(t, proj)
+	if err := os.RemoveAll(filepath.Join(proj, "repo-ai-lib", "hooks")); err != nil {
+		t.Fatal(err)
+	}
+	if code := cmdApply(); code != 0 {
+		t.Fatal("apply without hooks failed")
+	}
+	if code := cmdClean(); code != 0 {
+		t.Fatal("clean failed")
+	}
+	if _, err := os.Lstat(settings); err != nil {
+		t.Errorf("a user-created file must not be deleted: %v", err)
+	}
+}
+
+// An edited hook registry is reported as a derived file with guidance
+// pointing at hook.yaml, not as a source path.
+func TestRegistryEditedGuidance(t *testing.T) {
+	proj := hookProjectAt(t, "p")
+	initAndApply(t, proj)
+	reg := filepath.Join(proj, ".agsy", "hooks.codex.json")
+	write(t, reg, read(t, reg)+"\n")
+	out := captureStdout(t, func() { cmdStatus(false) })
+	if !strings.Contains(out, "edit the matching hook.yaml") || strings.Contains(out, "not inside the configured sources") {
+		t.Errorf("registry change must point at hook.yaml:\n%s", out)
+	}
+}
+
+// A ./ path inside a quoted string would be rewritten into a broken command
+// line (the whitespace tokenizer and the quote-aware one disagree); it is
+// refused like a directly quoted ./ path.
+func TestHooksQuotedLocalPathInsideStringRefused(t *testing.T) {
+	proj := hookProjectAt(t, "p")
+	write(t, filepath.Join(proj, "repo-ai-lib", "hooks", "block-rm", "hook.yaml"), "events:\n  PreToolUse:\n    - hooks:\n        - command: \"sh -c 'echo ./block-rm.sh'\"\n")
+	chdir(t, proj)
+	prompt.AssumeYes = true
+	t.Cleanup(func() { prompt.AssumeYes = false })
+	if code := cmdInit([]string{"./repo-ai-lib"}); code != 0 {
+		t.Fatal("init failed")
+	}
+	out := captureStdout(t, func() {
+		if code := cmdPlan(); code == 0 {
+			t.Error("plan must fail")
 		}
 	})
-	if !strings.Contains(out, "were not checked") {
-		t.Errorf("apply must repeat the warning:\n%s", out)
+	if !strings.Contains(out, "quotes a ./ path") {
+		t.Errorf("expected the quoted-path error:\n%s", out)
 	}
-	after, _ := build.LoadManifest(cfg.OutDir())
-	found := false
-	for _, r := range after.Merges {
-		if filepath.Clean(r.Path) == filepath.Clean(outside) {
-			found = true
+}
+
+// A target field that is neither a string nor a list of strings is an
+// error, not "every tool".
+func TestHooksTargetMalformedRefused(t *testing.T) {
+	proj := hookProjectAt(t, "p")
+	write(t, filepath.Join(proj, "repo-ai-lib", "hooks", "block-rm", "hook.yaml"), "target: 123\nevents:\n  PreToolUse:\n    - hooks:\n        - command: ./block-rm.sh\n")
+	chdir(t, proj)
+	prompt.AssumeYes = true
+	t.Cleanup(func() { prompt.AssumeYes = false })
+	if code := cmdInit([]string{"./repo-ai-lib"}); code != 0 {
+		t.Fatal("init failed")
+	}
+	out := captureStdout(t, func() {
+		if code := cmdPlan(); code == 0 {
+			t.Error("plan must fail")
 		}
-	}
-	if !found {
-		t.Errorf("foreign record must stay on the manifest: %+v", after.Merges)
+	})
+	if !strings.Contains(out, "must be a tool name or a list of tool names") {
+		t.Errorf("expected the malformed-target error:\n%s", out)
 	}
 }
 

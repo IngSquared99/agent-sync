@@ -27,7 +27,7 @@ func cmdClean() int {
 		return errExit(err)
 	}
 	defer release()
-	if !prompt.Confirm(fmt.Sprintf(i18n.T("Will remove mount links and %s/ (agsy.yaml untouched). Continue?"), cfg.Build.Out)) {
+	if !prompt.Confirm(fmt.Sprintf(i18n.T("Will remove mount links, agsy's hook entries from merged files, and %s/ (agsy.yaml untouched). Continue?"), cfg.Build.Out)) {
 		fmt.Println(i18n.T("Cancelled."))
 		return 1
 	}

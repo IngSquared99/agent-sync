@@ -81,9 +81,8 @@ These are problems with the "channel", not content differences:
 | you added your own group, changed permissions, model, other fields | not an anomaly | apply and clean leave them alone |
 | agsy's entries deleted, or the whole file | ✘ entries missing | `agsy apply` |
 | the file is not a JSON object (broken, an array) or is a symbolic link | ✘ apply refuses until fixed | fix by hand; clean skips it and says so |
-| the sources hold no hooks | nothing to merge ✔ | an absent file is not created; an existing one is not rewritten |
+| the sources hold no hooks | nothing to merge ✔ | an absent file is not created; an existing one is not rewritten. A file agsy created earlier is left as `{}`; `agsy clean` deletes it |
 | the `merge` entry was removed from `agsy.yaml` | ⚠ orphan: still holds agsy entries | apply leaves it and keeps reporting; remove by hand or `agsy clean` |
-| a recorded merge target lies outside the project | ⚠ not checked | agsy does not open files outside the project; open it and remove the entries starting with `agsy:` |
 | the project moved or `build.out` was renamed | in sync ✔ after apply | the old groups are recognized by the `agsy:` mark and replaced |
 
 ## 7. Conditions that stop apply before the build
@@ -94,7 +93,7 @@ These checks run before the discard confirmation:
 |-----------|--------------|-----|
 | a source path is missing | refuses to rebuild from an incomplete list | fix the path (clone, mount the disk, fix the typo) |
 | a mount point is occupied by a real path | refuses and lists it | move or delete it yourself |
-| workflow target error, `hook.yaml` error (parse failure, unknown event, missing command, a quoted `./` path, an override index past the group or one that empties a command, a referenced script missing) | lists the files to fix | fix the front matter or `hook.yaml`, or extend `build.tools` |
+| workflow target error (unknown tool, or a `target` that is not a name or a list of names), `hook.yaml` error (parse failure, unknown event, missing command, a `./` path in quotes or inside a quoted string, an override index past the group or one that empties a command, a referenced script missing) | lists the files to fix | fix the front matter or `hook.yaml`, or extend `build.tools` |
 | a merge target is a symbolic link or not a JSON object | refuses and lists it | fix `.claude/settings.json` by hand |
 | a mount point is occupied by a real `hooks.json` | refuses and lists it | rewrite its content as a hook in a source, then delete the file |
 | name conflict (`on_conflict: error`) | lists the conflicting pair | rename or delete one |

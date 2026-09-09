@@ -189,7 +189,7 @@ func parseHookSpec(path string) (*HookSpec, error) {
 		}
 		for gi, g := range groups {
 			if len(g.Hooks) == 0 {
-				problems = append(problems, fmt.Sprintf(i18n.T("event %s has no handlers"), ev))
+				problems = append(problems, fmt.Sprintf(i18n.T("group %d of %s has no handlers"), gi+1, ev))
 			}
 			for hi, h := range g.Hooks {
 				spec.Events[ev][gi].Hooks[hi] = normalizeYAML(h).(map[string]interface{})
@@ -259,11 +259,34 @@ func handlerType(h map[string]interface{}) string {
 	return "command"
 }
 
-// hasQuotedLocalPath reports whether a command wraps a ./ path in quotes.
-// rewriteCommand only rewrites whitespace-separated tokens, so the form is
-// rejected by parseHookSpec (build quotes rewritten paths itself).
+// hasQuotedLocalPath reports whether quoting changes which ./ paths a
+// command names. rewriteCommand rewrites whitespace-separated tokens and
+// splitCommand (ownership, existence checks) honors quotes; a command where
+// the two disagree — "./x", 'a ./x', sh -c 'echo ./x' — would be rewritten
+// into a broken command line, so parseHookSpec rejects it (build quotes
+// rewritten paths itself).
 func hasQuotedLocalPath(cmd string) bool {
-	return strings.Contains(cmd, `"./`) || strings.Contains(cmd, `'./`)
+	var plain []string
+	for _, tok := range strings.Fields(cmd) {
+		if strings.HasPrefix(tok, "./") {
+			plain = append(plain, tok)
+		}
+	}
+	var quoted []string
+	for _, tok := range splitCommand(cmd) {
+		if strings.HasPrefix(tok, "./") {
+			quoted = append(quoted, tok)
+		}
+	}
+	if len(plain) != len(quoted) {
+		return true
+	}
+	for i := range plain {
+		if plain[i] != quoted[i] {
+			return true
+		}
+	}
+	return false
 }
 
 // normalizeYAML converts map[interface{}]interface{} (as the YAML decoder may
@@ -295,26 +318,46 @@ func normalizeYAML(v interface{}) interface{} {
 }
 
 // specTargets resolves the target field like workflows do: absent = every
-// tool in build.tools.
-func specTargets(cfg *config.Config, spec *HookSpec) ([]string, []string) {
-	var targets, bad []string
-	switch v := spec.Target.(type) {
-	case string:
-		targets = []string{v}
-	case []interface{}:
-		for _, x := range v {
-			targets = append(targets, fmt.Sprint(x)) // a non-string entry fails the tool check below
-		}
+// tool in build.tools. Returns the targets, the names not in build.tools,
+// and whether the field had a shape other than a string or a list of
+// strings (reported, not treated as absent).
+func specTargets(cfg *config.Config, spec *HookSpec) (targets, bad []string, malformed bool) {
+	targets, malformed = TargetList(spec.Target)
+	if malformed {
+		return nil, nil, true
 	}
 	if len(targets) == 0 {
-		return append([]string{}, cfg.Build.Tools...), nil
+		return append([]string{}, cfg.Build.Tools...), nil, false
 	}
 	for _, t := range targets {
 		if !cfg.HasTool(t) {
 			bad = append(bad, t)
 		}
 	}
-	return targets, bad
+	return targets, bad, false
+}
+
+// TargetList reads a target field: a string or a list of strings. Anything
+// else (a number, a map, a list with a non-string entry) is malformed; nil
+// means absent.
+func TargetList(v interface{}) (targets []string, malformed bool) {
+	switch x := v.(type) {
+	case nil:
+		return nil, false
+	case string:
+		return []string{x}, false
+	case []interface{}:
+		for _, e := range x {
+			s, ok := e.(string)
+			if !ok {
+				return nil, true
+			}
+			targets = append(targets, s)
+		}
+		return targets, false
+	default:
+		return nil, true
+	}
 }
 
 // resolveHooks parses every hook, validates targets and overrides, and
@@ -334,7 +377,10 @@ func resolveHooks(cfg *config.Config, p *Plan) {
 		}
 		// Every problem of a hook is listed, like parseHookSpec's findings.
 		var errs []string
-		targets, bad := specTargets(cfg, spec)
+		targets, bad, malformed := specTargets(cfg, spec)
+		if malformed {
+			errs = append(errs, fmt.Sprintf(i18n.T("%s: %s must be a tool name or a list of tool names"), it.Name, TargetField))
+		}
 		for _, t := range bad {
 			errs = append(errs, fmt.Sprintf(i18n.T("%s: %s refers to unknown tool %q, valid values: %v"), it.Name, TargetField, t, cfg.Build.Tools))
 		}

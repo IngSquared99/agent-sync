@@ -122,6 +122,7 @@ agsy init --yes ~/all-ai-lib ./repo-ai-lib
 
 ```
  清空 .agsy/
+   → 先寫一份只含上次 merge 記錄的 manifest
    → 原樣複製 rules、skills、hooks
    → 轉換 workflows（skill ＋ 轉接頭）
    → 併出 AGENTS.md
@@ -131,7 +132,7 @@ agsy init --yes ~/all-ai-lib ./repo-ai-lib
    → merge（hooks.claude.json → .claude/settings.json 的 hooks 欄位）
 ```
 
-mount 或 merge 失敗時，建置結果保持完整，排除問題後重跑 `agsy apply` 即可。
+mount 或 merge 失敗時，建置結果保持完整，排除問題後重跑 `agsy apply` 即可。建置本身失敗時，最先寫的那份 manifest 仍保有 merge 記錄（哪個檔是 agsy 建的、agsy 加了哪些容器），之後 clean 還是分得清哪些是 agsy 的。
 
 ### 4. 孤兒回報
 
@@ -143,7 +144,7 @@ mount 或 merge 失敗時，建置結果保持完整，排除問題後重跑 `ag
 
 - **清單 A**：來源 → 產物：內容變更、新增、刪除，以及產物缺失（產物副本被刪；apply 可重建）。「來源路徑不存在」與「檔案被刪」分開標示。
 - **清單 B**：產物端：下次 apply 會捨棄的一切，各附保留指引。
-- **掛載**：每條連結的狀態（正常／遺失／指錯或已斷／被佔用／孤兒）；每個 merge 目標的狀態（同步／沒有東西可合併／agsy 條目被改／條目不見／不是 JSON 物件／孤兒／專案外未檢查）。
+- **掛載**：每條連結的狀態（正常／遺失／指錯或已斷／被佔用／孤兒）；每個 merge 目標的狀態（同步／沒有東西可合併／agsy 條目被改／條目不見／不是 JSON 物件／孤兒）。
 - **摘要**：`來源異動 N │ 產物端改動 N │ 產物缺失 N │ 掛載異常 N` 與建議的下一步。
 
 結束碼 `0` = 完全一致，`1` = 有任何落差。適合 CI 與 git hook。
@@ -152,7 +153,7 @@ mount 或 merge 失敗時，建置結果保持完整，排除問題後重跑 `ag
 
 從這個專案移除 agsy 建立的東西，確認後依序：
 
-1. 從 merge 目標移除 agsy 的 hook 條目（孤兒目標也包括）。只刪 agsy 的條目與 apply 帶進來的容器；檔案是 agsy 建的且變空才刪檔；沒有 agsy 條目的檔案不動。
+1. 從 merge 目標移除 agsy 的 hook 條目（孤兒目標也包括）。只刪 agsy 的條目與 apply 帶進來的容器；檔案是 agsy 建的且裡面沒別的東西（這次清空的，或先前 apply 就清空的）才刪檔；不是 agsy 建的檔絕不刪，沒有 agsy 條目的檔也不改寫。
 2. 移除掛載連結（含根目錄 `AGENTS.md` 與各 `hooks.json` 連結）與 manifest 記錄的孤兒連結；每條都先確認確實是指向產物的連結才動。真實的資料夾與檔案略過並回報。連結移除後空掉的資料夾也移除。
 3. 刪除整個產物資料夾。
 
