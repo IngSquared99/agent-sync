@@ -19,7 +19,7 @@ func TestOutInsideSourceRejected(t *testing.T) {
 sources: [./a-lib]
 build:
   out: ./a-lib/rule
-  on_conflict: {rules: rename, skills: error, workflows: rename}
+  on_conflict: {rules: rename, skills: error, workflows: rename, hooks: error}
   route: {field: target, default: [claude], buckets: [claude]}
 mount:
   - dir: .claude

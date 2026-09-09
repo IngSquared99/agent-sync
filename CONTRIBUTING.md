@@ -15,6 +15,10 @@ easy to review:
   counts.
 - **Silent behavior is a bug.** Files skipped, changes discarded, links left
   behind — everything gets reported. Follow the existing pattern.
+- **Vendor facts live in one table.** Hook event names, supported handler
+  types and registry shapes per tool are in `internal/build/hooks.go`,
+  registry file names in `internal/config`; change them together with the
+  docs' `hook.yaml` section and the golden tests.
 - **Destructive operations need guards.** Anything that deletes or overwrites
   must validate its paths (see `validateOut` / `RemoveOut`) and be covered by
   tests.

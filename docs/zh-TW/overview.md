@@ -1,104 +1,144 @@
 # 核心概念：agsy 是什麼？
 
-## 它解決的問題
+這一章不講操作，只講「它在解決什麼問題、用什麼方式解決」。看完這章再看安裝與快速上手，後面每一章的名詞都在這裡定義。
 
-當你同時使用多個 AI 開發工具（Claude Code、OpenAI Codex、Google Antigravity、Cursor…），每個工具讀取的位置與格式都不一樣：
+## 一、問題：同一份規範要放四個地方
 
-- Claude Code 從 `.claude/rules/` 讀 rules、從 `.claude/skills/` 讀 skills
-- Codex 讀專案根目錄的 `AGENTS.md`，並從 `.agents/skills/` 讀 skills
-- Antigravity 讀根目錄 `AGENTS.md`、從 `.agents/skills/` 讀 skills、從 `.agents/workflows/` 讀 `/名稱` workflows
-- Cursor 讀根目錄 `AGENTS.md`，並從 `.agents/skills/` 讀 skills
-
-同一套編碼規範、技能與流程被複製成好幾份、好幾種格式，每次修改都要同步到每一份。此外你通常還想要「個人共用庫＋專案專屬庫」的分層。
-
-**agsy（agent-sync）** 正是為此而生：
-
-> 它把多個來源的指令檔**合併**進單一建置輸出目錄（預設 `.agsy/`），**轉換**成各工具的原生格式，再以連結**掛載**到各工具的讀取位置。
-
-你只編輯來源，執行一次 `agsy apply`，所有工具同時更新。
-
-## 先認識這些名詞
-
-之後的文件會一直用到這些詞。
-
-| 名詞 | 意思 |
-|------|------|
-| 來源（source） | 你維護的原始指令庫（`sources` 陣列），可以有多個 |
-| 產物（output / artifacts） | `apply` 建置出來的目錄，預設 `.agsy/`。裡面全部是產生出來的，整個目錄可重建 |
-| 掛載（mount） | 在各工具的讀取位置建立指向產物的「連結」 |
-| 連結（symlink / junction / hard link） | 作業系統層級的指標，指向另一個目錄或檔案——**內容不會有第二份** |
-| 類別（category） | 三種指令檔：rules、skills、workflows |
-| 轉換產物（derived form） | 由轉換而非原樣複製產生的輸出：串接的 `AGENTS.md`、workflow 的 skill 形態、workflow 的轉接頭 |
-| manifest | `.agsy/.agsy-manifest.json`，建置紀錄；agsy 用它判斷哪一端變了什麼 |
-| 來源標記（source tag） | 同名項目以 rename 保留時附加在檔名上的來源識別，如 `-fromlib-all-ai-lib` |
-| adapter | 各工具的內建掛載預設，`init` 用它產生掛載設定 |
-| tools | `build.tools` 清單；workflow 的 `target:` 只能引用這裡列出的名稱 |
-
-## 單向資料流
-
-agsy 的資料流嚴格單向：
+現在的 AI 開發工具（Claude Code、OpenAI Codex、Google Antigravity、Cursor）都會讀「給 AI 看的指令檔」，最常見的就是編碼規範。問題是每家讀的位置和格式都不一樣：
 
 ```
- 你維護的來源 ──▶ build（複製＋轉換）──▶ .agsy/ ──▶ mount（連結）──▶ 各工具
+ 同一份「編碼規範」
+
+   Claude Code  ──▶ .claude/rules/       （一條規範一個檔）
+   Codex        ──▶ AGENTS.md            （全部規範併成一個檔）
+   Antigravity  ──▶ AGENTS.md
+   Cursor       ──▶ AGENTS.md
 ```
 
-**來源是唯一真相。`.agsy/` 裡的一切——也就是工具透過掛載讀到的一切——都是唯讀、可重建的產物。** 沒有回寫機制：掛載中的檔案被修改時，`status` 會回報、`apply` 會列出並詢問確認後重建覆蓋。保留改動的方式是手動搬進來源（status 會指出目的地），因此 AI 產出的內容在進入庫之前必經人工審視。
+技能（skills）、流程（workflows）也一樣各有各的位置。只要同時用兩家以上，或者手上有好幾個專案，每份指令就要維護好幾份副本，改一次要同步好幾次。
 
-## 三層架構
+## 二、agsy 做的事：只維護一份，其他都是產出來的
+
+![一份正本，多個專案](../assets/one-source-many-projects.zh-TW.gif)
+
+agsy 是一個命令列工具。你只維護**一份**指令檔（叫「來源」），跑一次 `agsy apply`，它做三件事：
 
 ```
-┌─────────────────────┐
-│  來源                │  ~/all-ai-lib/       （個人共用庫）
-│ （你維護的原稿）      │  ./repo-ai-lib/      （專案內的庫）
-└─────────┬───────────┘
-          │  ① agsy apply：掃描 → 合併 → 複製 → 轉換
-          ▼
-┌─────────────────────┐
-│  產物                │  .agsy/rules/        rules 原樣
-│ （可重建、唯讀）      │  .agsy/AGENTS.md     rules 串接（轉換產物）
-│                      │  .agsy/skills/       skills＋workflow 的 skill 形態
-│                      │  .agsy/workflows/    workflow 轉接頭
-└─────────┬───────────┘
-          │  ② agsy apply：建立連結
-          ▼
-┌─────────────────────┐
-│  掛載                │  AGENTS.md        → .agsy/AGENTS.md
-│ （工具實際讀取處）    │  .claude/rules    → .agsy/rules
-│                      │  .claude/skills   → .agsy/skills
-│                      │  .agents/skills   → .agsy/skills
-│                      │  .agents/workflows→ .agsy/workflows
-└─────────────────────┘
+ ①「來源」          ②「產物」                  ③「掛載」
+ 你維護的那一份 ──▶ 複製＋轉成各家格式 ──▶ 在各工具的讀取位置放一條「連結」
+                    放進 .agsy/                指向產物
+
+ 例：
+ ~/all-ai-lib/rules/python-style.md
+        │
+        ▼ apply
+ .agsy/rules/python-style.md          ◀── .claude/rules（連結）
+ .agsy/AGENTS.md（所有 rules 併成一檔） ◀── AGENTS.md（連結）
 ```
 
-- **來源**：你維護並進版控的原稿。順序＝優先序（前者優先）。
-- **產物**（`build.out`，預設 `.agsy/`）：建置成品。`apply` 每次整個清空重建。
-- **掛載**：各工具讀取位置的連結。目錄用 symlink（Windows 用 junction）；根目錄 `AGENTS.md` 用檔案 symlink（Windows 用 hard link）。工具看到的是連結；內容都在 `.agsy/`。
+「連結」是作業系統的功能：一個看起來像資料夾或檔案的東西，實際上指向另一個位置。工具打開 `.claude/rules/` 時，看到的就是 `.agsy/rules/` 的內容，不會有第二份複本。
 
-## 三種類別
+改了來源之後再跑一次 `agsy apply`，四家工具同時更新。
 
-指令檔依用途分三類。來源以三個子目錄存放（預設 `rules/`、`skills/`、`workflows/`），各有格式規則：
+## 三、名詞
 
-| 類別 | 來源格式 | 是什麼 | 輸出形態 |
-|------|---------|--------|---------|
-| rules | 單一 `.md` 檔 | 長期有效的規範與風格指南，常駐於 context | `rules/` 逐檔原樣（給 Claude Code）**加上**一份串接的 `AGENTS.md`（給 Codex / Cursor / Antigravity） |
-| skills | 內含 `SKILL.md` 的**目錄** | 打包好的能力；工具在任務符合描述時自動取用 | `skills/` 原樣複製 |
-| workflows | 單一 `.md` 檔 | 由人觸發的流程與 SOP，以 `/名稱` 執行 | `skills/` 裡的 **skill 形態**（front matter 補上 `disable-model-invocation: true`，支援此欄位的工具絕不自行執行）**加上** `workflows/` 裡給 Antigravity `/名稱` 用的**轉接頭** |
+後面的章節會一直用到這些詞。
 
-為什麼 workflow 要變成 skill：Claude Code、Codex、Cursor 都是透過 skills 機制讀取指令與流程，以 front matter（而非另一個目錄）決定誰能觸發。workflow 的來源維持單一檔案，由 build 打包成這些工具期望的 skill 形態。Antigravity 從 `workflows/` 目錄以 `/名稱` 觸發，build 在該處留一個簡短的轉接頭，指示 agent 載入對應的 skill（內容只存在一份，即 skill 形態）。
+| 名詞 | 意思 | 比喻 |
+|------|------|------|
+| 來源（source） | 你維護的指令檔資料夾，可以有好幾個 | 原稿 |
+| 產物（output） | `apply` 產生的資料夾，預設叫 `.agsy/`。裡面全部是產生出來的，隨時可以整個重建 | 印出來的副本 |
+| 掛載（mount） | 在各工具的讀取位置放連結，指向產物 | 把副本擺到各人桌上 |
+| 連結（link） | 作業系統層級的「指標」，指向另一個資料夾或檔案；內容只有一份 | 捷徑 |
+| 類別（category） | 指令檔的四種類型：rules、skills、workflows、hooks | 見下一節 |
+| 轉換產物（derived） | 不是原樣複製、而是轉換出來的產物：併成一檔的 `AGENTS.md`、workflow 變成的 skill、各家的 hook 登記表 | 翻譯本 |
+| 登記表（registry） | 每家工具一份的 hooks 清單檔 `.agsy/hooks.<工具>.json` | 各家格式的名冊 |
+| merge | Claude Code 專用：把 hooks 登記表合併進 `.claude/settings.json` 的 `hooks` 欄位，其他內容不動 | 只在別人的本子上加自己那幾行 |
+| manifest | `.agsy/.agsy-manifest.json`，上次 apply 的紀錄；`status` 用它判斷哪邊改了什麼 | 上次印刷的存根 |
+| 來源標記（tag） | 同名檔案兩邊都保留時，附在檔名上的來源名稱 | 出處章 |
+| adapter | 各工具的內建掛載設定，`init` 用它產生設定檔 | 出廠範本 |
+| tools | 設定檔裡列出要服務的工具名單 | 收件人名單 |
 
-## 各工具最終讀到什麼
+## 四、四種類別
 
-| 工具 | rules | skills | workflows |
-|------|-------|--------|-----------|
-| Claude Code | `.claude/rules/`（逐檔） | `.claude/skills/` | `.claude/skills/` 裡的 skill 形態，以 `/名稱` 觸發 |
-| Codex | 根目錄 `AGENTS.md` | `.agents/skills/` | 同左（skill 形態） |
-| Antigravity | 根目錄 `AGENTS.md` | `.agents/skills/` | `.agents/workflows/` 的轉接頭 → `/名稱` 載入 skill |
-| Cursor | 根目錄 `AGENTS.md` | `.agents/skills/` | `.agents/skills/` 裡的 skill 形態，以 `/名稱` 觸發 |
+指令檔依用途分四種，來源資料夾裡各放一個子資料夾。
 
-`.agents/skills/` 是 Codex、Antigravity、Cursor 三家原生共讀的目錄——一條連結服務三個工具。Claude Code 不讀 `AGENTS.md`，所以只有它另外掛逐檔的 `.claude/rules/`。
+| 類別 | 是什麼 | 來源長什麼樣 | 一句話 |
+|------|--------|-------------|--------|
+| rules | 長期有效的規範、風格要求；AI 讀了照做 | 一個 `.md` 檔 | 教 |
+| skills | 打包好的能力；AI 判斷任務符合時自己拿來用 | 一個含 `SKILL.md` 的資料夾 | 會 |
+| workflows | 由人觸發的流程（輸入 `/名稱`） | 一個 `.md` 檔 | 做 |
+| hooks | 在 AI 動作前後執行的小程式；不合規就擋下，AI 不能選擇不遵守 | 一個含 `hook.yaml` 和腳本的資料夾 | 擋 |
 
-## 來源子目錄需遵循命名慣例
+前三種都是「給 AI 讀的文字」，第四種 hooks 不太一樣，下一節單獨說明。
 
-agsy 預設掃描來源裡的 `rules/`、`skills/`、`workflows/`。既有的庫若一直使用別的名稱，可透過 `build.categories.<類別>.from` 直接接上、不必搬檔案——見[設定檔](config.md)。
+## 五、rules 與 hooks 的差別
+
+![rules 教、hooks 擋](../assets/rules-teach-hooks-block.zh-TW.gif)
+
+**rules 是文字，hooks 是程式。**
+
+rules 寫在 `.md` 檔裡，AI 讀了之後照做；但 AI 是機率性的，對話一長、跟任務目標衝突時，可能就不照做。hook 則是掛在 AI 工作流程固定時機上的一支小程式：例如「執行任何指令之前」（`PreToolUse`），AI 走到那裡會先暫停，把它打算做的事交給你的腳本檢查；腳本回傳結束碼 2 就擋下，AI 不能選擇不遵守。
+
+```
+ rules             AI 讀到「不可執行 rm -rf」  ──▶  通常照做，偶爾不照做
+ hooks   AI 要執行指令前 ──▶ 你的腳本檢查 ──▶ exit 2 擋下 ／ exit 0 放行
+```
+
+怎麼分：能寫成「如果…就不准」的規範（禁止碰的檔案、必跑的檢查、不准停的條件）用 hooks；風格與偏好這類無法用程式判斷的用 rules。兩層並用。
+
+在 agsy 裡，hook 也是來源的一種：一個資料夾放 `hook.yaml`（宣告在哪個時機、跑哪支腳本）和腳本本身。四家工具的 hook 機制相同，差別在登記的位置和格式，這一段由 agsy 翻譯：寫一次 `hook.yaml`，`apply` 之後四家的登記表都有它。
+
+還沒用到 hooks 也沒關係：來源裡沒有 `hooks/` 資料夾時，這一層什麼都不會發生。
+
+## 六、每種類別產出什麼
+
+```
+ 來源                      產物（.agsy/）
+ ─────────────────────     ───────────────────────────────────────
+ rules/a.md          ──▶   rules/a.md              原樣
+                     ──▶   AGENTS.md               所有 rules 併成一檔
+ skills/x/SKILL.md   ──▶   skills/x/SKILL.md       原樣
+ workflows/deploy.md ──▶   skills/deploy/SKILL.md  變成 skill（給 Claude / Codex / Cursor）
+                     ──▶   workflows/deploy.md     轉接頭（給 Antigravity 的 /deploy）
+ hooks/block-rm/     ──▶   hooks/block-rm/         原樣（腳本＋hook.yaml）
+                     ──▶   hooks.claude.json       ┐
+                     ──▶   hooks.codex.json        │ 四家各一份登記表
+                     ──▶   hooks.antigravity.json  │
+                     ──▶   hooks.cursor.json       ┘
+```
+
+workflow 為什麼變成 skill：Claude Code、Codex、Cursor 都是用 skills 機制讀流程，用檔頭的欄位決定誰能觸發。來源維持一個簡單的 `.md`，轉換由 agsy 做。Antigravity 是從 `workflows/` 資料夾用 `/名稱` 觸發，所以那裡留一個短短的「轉接頭」，告訴 AI 去載入對應的 skill。
+
+## 七、每家工具最後讀到什麼
+
+![同一份規範，四家工具](../assets/four-tools-one-apply.zh-TW.gif)
+
+| 工具 | rules | skills | workflows | hooks |
+|------|-------|--------|-----------|-------|
+| Claude Code | `.claude/rules/` | `.claude/skills/` | `.claude/skills/` 裡的 skill，用 `/名稱` | `.claude/settings.json` 的 `hooks` 欄位（merge） |
+| Codex | 根目錄 `AGENTS.md` | `.agents/skills/` | 同左 | `.codex/hooks.json` |
+| Antigravity | 根目錄 `AGENTS.md` | `.agents/skills/` | `.agents/workflows/` 的轉接頭 | `.agents/hooks.json` |
+| Cursor | 根目錄 `AGENTS.md` | `.agents/skills/` | 同 Claude | `.cursor/hooks.json` |
+
+`.agents/skills/` 是 Codex、Antigravity、Cursor 三家共同讀的資料夾，一條連結服務三家。Claude Code 不讀 `AGENTS.md`，所以它另外掛 `.claude/rules/`。
+
+## 八、方向只有一個
+
+```
+ 來源 ──▶ apply ──▶ 產物 ──▶ 連結 ──▶ 工具
+```
+
+來源是唯一的正本。產物和工具讀到的一切都是可重建的副本，沒有「從副本寫回正本」這回事。如果 AI 工具透過連結改了產物（例如替你加了一條規則），`agsy status` 會列出來；想保留就自己搬回來源，再 apply。這個手動步驟就是審核關卡：AI 產出的內容先經過人，才進入正本。
+
+## 九、agsy 只動 repo 裡的東西
+
+- 來源可以在任何地方（例如家目錄的共用庫 `~/all-ai-lib`），agsy 只讀它。
+- 產物和連結都放在專案資料夾內。
+- 各工具的個人層設定（`~/.claude`、`~/.codex` 之類）不是 agsy 的寫入目標，那裡放你自己的東西。
+
+## 十、來源資料夾的命名
+
+agsy 預設在每個來源裡找 `rules/`、`skills/`、`workflows/`、`hooks/` 四個子資料夾，缺哪個都沒關係。既有的庫用別的名字（例如 `prompts/`）時，設定檔的 `build.categories.<類別>.from` 可以直接指過去，不必搬檔案，見[設定檔](config.md)。
 
 → 下一章：[安裝](install.md)

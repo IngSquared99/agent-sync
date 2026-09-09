@@ -70,7 +70,7 @@ func Inspect(cfg *config.Config) ([]LinkPlan, error) {
 			lp := LinkPlan{
 				Dir: m.Dir, Name: name, LinkPath: linkPath,
 				Target: filepath.ToSlash(rel), AbsTgt: absTgt,
-				FileTgt: sub == config.AgentsMD,
+				FileTgt: IsFileTarget(sub),
 			}
 			inspectOne(&lp)
 			plans = append(plans, lp)
@@ -134,6 +134,13 @@ func sameAsTarget(path, target string) bool {
 	return os.SameFile(a, b)
 }
 
+// IsFileTarget reports whether a link target names one of the derived files
+// (AGENTS.md, hook registries) rather than a category directory.
+func IsFileTarget(sub string) bool {
+	clean := strings.Trim(filepath.ToSlash(sub), "/")
+	return clean == config.AgentsMD || config.IsRegistryFile(clean)
+}
+
 // IsManagedLink reports whether path is a link created by this tool: it must
 // be a link and it must resolve into the build output directory. Junctions
 // whose target cannot be read are conservatively not claimed (never delete
@@ -145,10 +152,15 @@ func IsManagedLink(linkPath, outDir string) bool {
 		return false
 	}
 	if !isLink(fi, linkPath) {
-		// A hard-linked AGENTS.md is claimed only when it is the same file as
-		// the derived artifact inside the output.
-		if fi.Mode().IsRegular() && sameAsTarget(linkPath, filepath.Join(outDir, config.AgentsMD)) {
-			return true
+		// A hard-linked file mount (AGENTS.md or a hook registry on Windows)
+		// is claimed only when it is the same file as the derived artifact
+		// inside the output.
+		if fi.Mode().IsRegular() {
+			for _, name := range config.ReservedTopNames() {
+				if sameAsTarget(linkPath, filepath.Join(outDir, name)) {
+					return true
+				}
+			}
 		}
 		return false
 	}

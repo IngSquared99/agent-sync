@@ -24,7 +24,7 @@ func cmdInit(argSources []string) int {
 	// --yes is the explicit consent to the recommended defaults.
 	if !prompt.IsStdinTTY() && !prompt.AssumeYes {
 		fmt.Println(i18n.T("✘ init requires interactive prompts (the same-name strategy must be chosen by you explicitly)."))
-		fmt.Println(i18n.T("  In non-interactive environments add --yes to accept the recommended defaults (rules=rename, skills=error, workflows=rename; a fresh init also selects ALL built-in tools)."))
+		fmt.Println(i18n.T("  In non-interactive environments add --yes to accept the recommended defaults (rules=rename, skills=error, workflows=rename, hooks=error; a fresh init also selects ALL built-in tools)."))
 		return 1
 	}
 	wd, _ := os.Getwd()
@@ -84,7 +84,7 @@ func cmdInit(argSources []string) int {
 	}
 	var labels []string
 	for _, a := range adapters {
-		labels = append(labels, fmt.Sprintf(i18n.T("%s (%s/)"), a.Display, a.Mount.Dir))
+		labels = append(labels, fmt.Sprintf(i18n.T("%s (%s/)"), a.Display, strings.Join(a.Dirs(), "/, ")))
 	}
 	// Edit mode: pre-check the tools currently listed in build.tools
 	var preselected []int
@@ -109,7 +109,9 @@ func cmdInit(argSources []string) int {
 	if cur != nil {
 		known := map[string]bool{}
 		for _, a := range adapters {
-			known[a.Mount.Dir] = true
+			for _, d := range a.Dirs() {
+				known[d] = true
+			}
 		}
 		for _, m := range cur.Mount {
 			if m.Dir == "." {
@@ -139,7 +141,7 @@ func cmdInit(argSources []string) int {
 		}
 	}
 
-	// ── The three mandatory on_conflict questions ──
+	// ── The four mandatory on_conflict questions ──
 	strategies := map[string]string{}
 	opts := []string{
 		i18n.T("rename   keep both copies, tagging filenames with their source"),
@@ -162,6 +164,7 @@ func cmdInit(argSources []string) int {
 	ask("rules", i18n.T("(recommended rename: \"global base + project extras\" often need to coexist)"), 0)
 	ask("skills", i18n.T("(recommended error: skills trigger on description semantics, so coexistence is unpredictable; rename also rewrites front-matter)"), 1)
 	ask("workflows", "", 0)
+	ask("hooks", i18n.T("(recommended error: two hooks with the same name usually should be merged into one)"), 1)
 
 	// ── Output directory ──
 	outDef := ".agsy"
@@ -281,17 +284,18 @@ func renderConfig(sources []string, out string, strategies map[string]string,
 	var b strings.Builder
 	b.WriteString(i18n.T("# agsy config file (agent-sync)\n"))
 	b.WriteString(i18n.T("# Path syntax: ~ prefix = home expansion; relative paths = resolved from this file's directory; absolute paths = as is\n"))
-	b.WriteString(i18n.T("version: 1\n\nsources:                      # ordered array, earlier entries win\n"))
+	b.WriteString(i18n.T("version: 2\n\nsources:                      # ordered array, earlier entries win\n"))
 	for _, s := range sources {
 		b.WriteString("  - " + s + "\n")
 	}
 	b.WriteString("\nbuild:\n")
 	b.WriteString("  out: " + out + i18n.T("                   # must be inside the project directory (apply wipes it entirely)\n\n"))
-	b.WriteString(i18n.T("  categories:                 # source subdir → output subdir (the three to values must all differ)\n"))
+	b.WriteString(i18n.T("  categories:                 # source subdir → output subdir (the four to values must all differ)\n"))
 	cats := map[string]config.Category{
 		"rules":     {From: "rules", To: "rules"},
 		"skills":    {From: "skills", To: "skills"},
 		"workflows": {From: "workflows", To: "workflows"},
+		"hooks":     {From: "hooks", To: "hooks"},
 	}
 	if categories != nil {
 		cats = categories // loaded configs are already default-filled
@@ -303,8 +307,9 @@ func renderConfig(sources []string, out string, strategies map[string]string,
 	b.WriteString(i18n.T("  on_conflict:                # same-name handling: first / rename / error (required per category)\n"))
 	b.WriteString("    rules:     " + strategies["rules"] + "\n")
 	b.WriteString("    skills:    " + strategies["skills"] + "\n")
-	b.WriteString("    workflows: " + strategies["workflows"] + "\n\n")
-	b.WriteString("  tools: [" + strings.Join(tools, ", ") + "]" + i18n.T("   # valid values for a workflow's target: front matter\n"))
+	b.WriteString("    workflows: " + strategies["workflows"] + "\n")
+	b.WriteString("    hooks:     " + strategies["hooks"] + "\n\n")
+	b.WriteString("  tools: [" + strings.Join(tools, ", ") + "]" + i18n.T("   # valid values for the target: field of workflows and hooks\n"))
 	b.WriteString("\nmount:\n")
 	if needAgentsMD(adapters, picked) || len(rootExtras) > 0 {
 		b.WriteString(i18n.T("  - dir: .                    # project root: AGENTS.md for Codex / Cursor / Antigravity\n"))
@@ -326,48 +331,83 @@ func renderConfig(sources []string, out string, strategies map[string]string,
 	type mountAcc struct {
 		dir      string
 		links    map[string]string
+		merge    map[string]string
 		displays []string
 	}
 	var accs []*mountAcc
 	byDir := map[string]*mountAcc{}
 	for _, i := range picked {
 		a := adapters[i]
-		acc, ok := byDir[a.Mount.Dir]
-		if !ok {
-			acc = &mountAcc{dir: a.Mount.Dir, links: map[string]string{}}
-			byDir[a.Mount.Dir] = acc
-			accs = append(accs, acc)
-		}
-		acc.displays = append(acc.displays, a.Display)
-		for k, v := range a.Mount.Links {
-			acc.links[k] = v
+		for _, m := range a.Mounts {
+			acc, ok := byDir[m.Dir]
+			if !ok {
+				acc = &mountAcc{dir: m.Dir, links: map[string]string{}, merge: map[string]string{}}
+				byDir[m.Dir] = acc
+				accs = append(accs, acc)
+			}
+			if !containsStr(acc.displays, a.Display) {
+				acc.displays = append(acc.displays, a.Display)
+			}
+			for k, v := range m.Links {
+				acc.links[k] = v
+			}
+			for k, v := range m.Merge {
+				acc.merge[k] = v
+			}
 		}
 	}
 	for _, acc := range accs {
 		b.WriteString("  - dir: " + acc.dir + "        # " + strings.Join(acc.displays, " + ") + "\n")
-		b.WriteString("    links:\n")
-		var names []string
-		for k := range acc.links {
-			names = append(names, k)
+		if len(acc.links) > 0 {
+			b.WriteString("    links:\n")
+			for _, k := range sortedNames(acc.links) {
+				b.WriteString(fmt.Sprintf("      %-10s %s\n", k+":", acc.links[k]))
+			}
 		}
-		sort.Strings(names)
-		for _, k := range names {
-			b.WriteString(fmt.Sprintf("      %-10s %s\n", k+":", acc.links[k]))
+		if len(acc.merge) > 0 {
+			b.WriteString(i18n.T("    merge:                    # hook entries merged into this file's \"hooks\" key (other keys untouched)\n"))
+			for _, k := range sortedNames(acc.merge) {
+				b.WriteString(fmt.Sprintf("      %-10s %s\n", k+":", acc.merge[k]))
+			}
 		}
 	}
 	for _, m := range customMounts {
 		b.WriteString("  - dir: " + m.Dir + i18n.T("        # custom mount (not a built-in adapter)\n"))
-		b.WriteString("    links:\n")
-		var names []string
-		for k := range m.Links {
-			names = append(names, k)
+		if m.OutsideProject {
+			b.WriteString("    outside_project: true\n")
 		}
-		sort.Strings(names)
-		for _, k := range names {
-			b.WriteString(fmt.Sprintf("      %-10s %s\n", k+":", m.Links[k]))
+		if len(m.Links) > 0 {
+			b.WriteString("    links:\n")
+			for _, k := range sortedNames(m.Links) {
+				b.WriteString(fmt.Sprintf("      %-10s %s\n", k+":", m.Links[k]))
+			}
+		}
+		if len(m.Merge) > 0 {
+			b.WriteString("    merge:\n")
+			for _, k := range sortedNames(m.Merge) {
+				b.WriteString(fmt.Sprintf("      %-10s %s\n", k+":", m.Merge[k]))
+			}
 		}
 	}
 	return b.String()
+}
+
+func sortedNames(m map[string]string) []string {
+	var names []string
+	for k := range m {
+		names = append(names, k)
+	}
+	sort.Strings(names)
+	return names
+}
+
+func containsStr(list []string, s string) bool {
+	for _, x := range list {
+		if x == s {
+			return true
+		}
+	}
+	return false
 }
 
 // printDiff lists differences line by line (LCS). The config file is only a
@@ -446,7 +486,9 @@ func offerGitignore(wd, out string, adapters []Adapter, picked []int, customMoun
 		add(config.AgentsMD)
 	}
 	for _, i := range picked {
-		addLinks(adapters[i].Mount.Dir, adapters[i].Mount.Links)
+		for _, m := range adapters[i].Mounts {
+			addLinks(m.Dir, m.Links) // merge targets are the user's files, never ignored
+		}
 	}
 	for _, m := range customMounts {
 		addLinks(m.Dir, m.Links)

@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"path/filepath"
 	"slices"
 	"strings"
 
@@ -71,6 +72,28 @@ func cmdPlan() int {
 				}
 			}
 			fmt.Println(line)
+			if cat == "hooks" && it.Hook != nil {
+				if d := strings.TrimSpace(it.Hook.Description); d != "" {
+					fmt.Println("      " + d)
+				}
+				var reach []string
+				for _, tool := range cfg.Build.Tools {
+					if !build.HasHookDialect(tool) {
+						continue
+					}
+					mark := "—"
+					if it.HookOut[tool] {
+						mark = "✓"
+					}
+					reach = append(reach, tool+" "+mark)
+				}
+				fmt.Println("      " + strings.Join(reach, "  "))
+				for _, n := range strings.Split(it.RouteNote, "; ") {
+					if n != "" {
+						fmt.Println("      " + n)
+					}
+				}
+			}
 		}
 		for _, it := range p.Skipped {
 			if it.Category == cat {
@@ -88,6 +111,28 @@ func cmdPlan() int {
 		}
 	}
 	fmt.Printf(i18n.T("\nderived: %s (all %d rules concatenated, read by tools without a rules directory)\n"), config.AgentsMD, rulesN)
+	var regs []string
+	hooksN := 0
+	for _, it := range p.Items {
+		if it.Category == "hooks" {
+			hooksN++
+		}
+	}
+	for _, tool := range cfg.Build.Tools {
+		if build.HasHookDialect(tool) {
+			regs = append(regs, config.HookRegistryFiles[tool])
+		}
+	}
+	if len(regs) > 0 {
+		fmt.Printf(i18n.T("derived: %s (hook registries, one per tool, %d hooks translated)\n"), strings.Join(regs, ", "), hooksN)
+	}
+	if hooksN > 0 {
+		for _, tool := range cfg.Build.Tools {
+			if build.HasHookDialect(tool) && !cfg.HookRegistryMounted(tool) {
+				fmt.Printf(i18n.T("⚠ build.tools lists %q, but nothing mounts %s; hooks will not reach that tool\n"), tool, config.HookRegistryFiles[tool])
+			}
+		}
+	}
 	if len(p.Ignored) > 0 {
 		fmt.Printf(i18n.T("\n⚠ the following %d files do not match the inclusion rules and will not enter the artifacts:\n"), len(p.Ignored))
 		for _, ig := range p.Ignored {
@@ -113,7 +158,7 @@ func cmdPlan() int {
 		}
 	}
 	if len(p.RouteErrors) > 0 {
-		fmt.Println(i18n.T("\n✘ workflow target problems (front matter), apply will stop:"))
+		fmt.Println(i18n.T("\n✘ workflow target or hook declaration problems, apply will stop:"))
 		for _, e := range p.RouteErrors {
 			fmt.Println("  -", e)
 		}
@@ -124,11 +169,54 @@ func cmdPlan() int {
 	if err != nil {
 		return errExit(err)
 	}
+	// Merge states are judged against the manifest like status does; without
+	// one the registry file stands in.
+	var mergeRecs []build.MergeRecord
+	if m, err := build.LoadManifest(cfg.OutDir()); err == nil {
+		mergeRecs = m.Merges
+	}
+	merges, err := mount.InspectMerge(cfg, mergeRecs)
+	if err != nil {
+		return errExit(err)
+	}
+	mergeBad := 0
+	// Merge entries print under their directory, after that directory's links.
+	printMerges := func(dir string) {
+		for _, mp := range merges {
+			if mp.Dir != dir {
+				continue
+			}
+			var note string
+			switch mp.State {
+			case mount.MergeMissing:
+				note = i18n.T("(merge into \"hooks\"; file will be created)")
+			case mount.MergeAbsent:
+				note = i18n.T("(merge into \"hooks\"; other keys untouched)")
+			case mount.MergeClean:
+				note = fmt.Sprintf(i18n.T("(merge into \"hooks\"; %d agsy entries present, will be refreshed)"), mp.Owned)
+			case mount.MergeIdle:
+				note = i18n.T("(no hook entries to merge; file untouched)")
+			case mount.MergeStale:
+				note = i18n.T("⚠ agsy entries point at a previous output path; apply updates them")
+			case mount.MergeModified:
+				note = i18n.T("⚠ agsy entries were modified — apply will ask before rebuilding them")
+			case mount.MergeInvalid:
+				note = "✘ " + mp.Note + i18n.T("; apply will fail, handle it manually")
+				mergeBad++
+			}
+			fmt.Printf("  %-10s ⇐ %-28s %s\n", mp.Name, filepath.Base(mp.Registry), note)
+		}
+	}
+	printed := map[string]bool{}
 	curDir := ""
 	realCnt, staleCnt := 0, 0
 	for _, l := range links {
 		if l.Dir != curDir {
+			if curDir != "" {
+				printMerges(curDir)
+			}
 			curDir = l.Dir
+			printed[curDir] = true
 			fmt.Printf("\n%s/\n", l.Dir)
 		}
 		var note string
@@ -146,6 +234,16 @@ func cmdPlan() int {
 		}
 		fmt.Printf("  %-10s → %-28s %s\n", l.Name, l.Target, note)
 	}
+	if curDir != "" {
+		printMerges(curDir)
+	}
+	for _, mp := range merges {
+		if !printed[mp.Dir] {
+			printed[mp.Dir] = true
+			fmt.Printf("\n%s/\n", mp.Dir)
+			printMerges(mp.Dir)
+		}
+	}
 
 	fmt.Println(i18n.T("\n═══ summary ═══"))
 	renames := 0
@@ -158,8 +256,8 @@ func cmdPlan() int {
 	// "skipped" would make the numbers impossible to reconcile: the former are
 	// same-name items actively discarded by the first strategy, the latter are
 	// files that do not match the inclusion rules.
-	fmt.Printf(i18n.T("%d items │ %d renamed │ %d conflicts │ %d name collisions │ %d dropped (first) │ %d excluded │ %d links │ %d mount anomalies │ %d mount conflicts\n"),
-		p.Placed(), renames, len(p.Conflicts), len(p.Collisions), len(p.Skipped), len(p.Ignored), len(links), staleCnt, realCnt)
+	fmt.Printf(i18n.T("%d items │ %d renamed │ %d conflicts │ %d name collisions │ %d dropped (first) │ %d excluded │ %d links │ %d merges │ %d mount anomalies │ %d mount conflicts\n"),
+		p.Placed(), renames, len(p.Conflicts), len(p.Collisions), len(p.Skipped), len(p.Ignored), len(links), len(merges), staleCnt, realCnt+mergeBad)
 	fmt.Println(i18n.T("\nNo files were written. Run agsy apply once everything looks right."))
 
 	if len(p.Conflicts) > 0 || len(p.Collisions) > 0 || len(p.RouteErrors) > 0 {

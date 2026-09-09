@@ -1,6 +1,8 @@
 package build
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -50,5 +52,34 @@ func TestAssignTagsNumericFallbackUnique(t *testing.T) {
 			t.Fatalf("duplicate tag %q; tags: %v", s.Tag, []string{sources[0].Tag, sources[1].Tag, sources[2].Tag})
 		}
 		seen[s.Tag] = true
+	}
+}
+
+// ExecuteWith writes the previous apply's merge records before building, so
+// a build that fails halfway leaves a manifest that still carries them.
+func TestExecuteFailureKeepsMergeRecords(t *testing.T) {
+	cfg, lib, _ := setupTwoSources(t, "rename", "error")
+	p := compute(t, cfg)
+	// Break a source after Compute: the copy step fails inside Execute.
+	rule := filepath.Join(lib, "rules", "python-style.md")
+	if err := os.Remove(rule); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(rule, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	prior := []MergeRecord{{Path: ".claude/settings.json", Key: "hooks", Hash: "h", Created: true, HooksDir: ".agsy/hooks", AddedKey: true}}
+	if _, err := ExecuteWith(cfg, p, prior); err == nil {
+		t.Fatal("Execute must fail once a source turned into a directory")
+	}
+	m, err := LoadManifest(cfg.OutDir())
+	if err != nil {
+		t.Fatalf("manifest must exist after a failed build: %v", err)
+	}
+	if len(m.Merges) != 1 || !m.Merges[0].Created || !m.Merges[0].AddedKey || m.Merges[0].HooksDir != ".agsy/hooks" {
+		t.Errorf("merge records lost: %+v", m.Merges)
+	}
+	if len(m.Items) != 0 {
+		t.Errorf("the minimal manifest records no items: %+v", m.Items)
 	}
 }

@@ -1,19 +1,18 @@
 # agent-sync (agsy) Documentation
 
-The complete guide to agsy, ordered as "install → quick start → deep dives → troubleshooting".
-Browse chapters via the sidebar on the left; the search box at the top-right covers the full text. When reading on GitHub, use the file links in the table below.
+The agsy documentation, ordered as "concepts → install → quick start → deep dives → troubleshooting". Browse chapters via the sidebar on the left; the search box at the top right covers the full text. When reading on GitHub, use the file links in the table below.
 
 ## Contents
 
 | Chapter | Covers |
 |---------|--------|
-| [Core Concepts](overview.md) | what agsy is, the one-way data flow, the three layers and categories |
-| [Installation](install.md) | Homebrew / winget / from-source, interface language |
+| [Core Concepts](overview.md) | the problem it solves, the terms, the four categories, what each tool reads |
+| [Installation](install.md) | Homebrew / from source, interface language, upgrade and removal |
 | [Quick Start](quickstart.md) | first sync in four steps, command cheat sheet |
-| [Configuration](config.md) | every agsy.yaml field, with the safety rules |
+| [Configuration](config.md) | agsy.yaml field by field, hook.yaml, merge, error quick reference |
 | [Command Reference](commands.md) | command overview plus per-command details |
 | [Adapters](adapters.md) | built-in adapters (Claude Code / Codex / Antigravity / Cursor) and custom mounts |
-| [Scenario Guide](scenarios.md) | apply behavior under every combination of changes |
+| [Scenario Guide](scenarios.md) | what status shows and apply does when the two sides differ |
 | [FAQ](faq.md) | common questions from the user's point of view |
 
 ## Suggested reading paths

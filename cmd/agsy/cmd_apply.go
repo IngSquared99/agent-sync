@@ -71,6 +71,26 @@ func cmdApply() int {
 		fmt.Println(i18n.T("  (for a real AGENTS.md: move its content into a source rules/ directory, or rename the file to keep it)"))
 		return 1
 	}
+	// Pre-check: merge targets that cannot be written (a symlink, or not a
+	// JSON object). Same reasoning: detectable now, so fail before the
+	// rebuild rather than after it.
+	preMerges, err := mount.InspectMerge(cfg, nil)
+	if err != nil {
+		return errExit(err)
+	}
+	var badMerge []string
+	for _, mp := range preMerges {
+		if mp.State == mount.MergeInvalid {
+			badMerge = append(badMerge, mp.FilePath+"  ("+mp.Note+")")
+		}
+	}
+	if len(badMerge) > 0 {
+		fmt.Println(i18n.T("✘ the following merge targets cannot be updated (symbolic link or not a JSON object); fix them manually first:"))
+		for _, b := range badMerge {
+			fmt.Println("  -", b)
+		}
+		return 1
+	}
 
 	// Compute runs before the confirmation (read-only): fatal problems
 	// (target errors, name conflicts, collisions) must surface before the
@@ -80,7 +100,7 @@ func cmdApply() int {
 		return errExit(err)
 	}
 	if len(p.RouteErrors) > 0 {
-		fmt.Println(i18n.T("✘ workflow target problems (front matter); fix these files first:"))
+		fmt.Println(i18n.T("✘ workflow target or hook declaration problems; fix these files first:"))
 		for _, e := range p.RouteErrors {
 			fmt.Println("  -", e)
 		}
@@ -121,8 +141,19 @@ func cmdApply() int {
 		}
 		printSourceChanges(rep)
 		printForeignFrom(rep.ForeignFrom)
-		if len(rep.Artifacts) > 0 {
-			printArtifactChanges(cfg, rep, true)
+		modifiedMerges := 0
+		for _, mp := range rep.Merges {
+			if mp.State == mount.MergeModified {
+				modifiedMerges++
+			}
+		}
+		if len(rep.Artifacts) > 0 || modifiedMerges > 0 {
+			if len(rep.Artifacts) > 0 {
+				printArtifactChanges(cfg, rep, true)
+			}
+			if modifiedMerges > 0 {
+				printMergeChanges(rep, true)
+			}
 			if !prompt.Confirm(i18n.T("Discard these artifact-side changes and rebuild?")) {
 				fmt.Println(i18n.T("Cancelled."))
 				return 1
@@ -148,7 +179,14 @@ func cmdApply() int {
 	if err := mount.ClearFileLinks(cfg); err != nil {
 		return errExit(err)
 	}
-	newM, err := build.Execute(cfg, p)
+	// The previous apply's merge records (created flag, containers agsy
+	// added, previous hooks directory) travel through the build: Execute
+	// writes them first, so they survive a rebuild that fails halfway.
+	var oldMerges []build.MergeRecord
+	if mErr == nil && m != nil {
+		oldMerges = m.Merges
+	}
+	newM, err := build.ExecuteWith(cfg, p, oldMerges)
 	if err != nil {
 		fmt.Println("✘", err)
 		fmt.Println(i18n.T("(the rebuild did not finish; the output and file links may be incomplete — fix the issue and rerun agsy apply)"))
@@ -167,6 +205,49 @@ func cmdApply() int {
 		return 1
 	}
 	fmt.Printf(i18n.T("✔ mount done: %d links\n"), len(links))
+
+	// merge (Claude Code's settings.json): the registry's groups replace the
+	// agsy-owned groups; everything else in the file is preserved.
+	merges, err := mount.InspectMerge(cfg, oldMerges)
+	if err != nil {
+		return errExit(err)
+	}
+	// From here on the manifest carries this apply's records; previous ones
+	// are kept only as orphans (re-added below).
+	newM.Merges = nil
+	if len(merges) > 0 {
+		recs, err := mount.ApplyMerge(cfg, merges, oldMerges)
+		if err != nil {
+			// Targets written before the failure get their fresh record;
+			// the rest keep the previous one.
+			newM.Merges = mergeRecords(cfg, recs, oldMerges)
+			if werr := build.WriteManifest(cfg.OutDir(), newM); werr != nil {
+				fmt.Println(i18n.T("⚠ failed to record merge targets in the manifest:"), werr)
+			}
+			fmt.Println("✘", err)
+			fmt.Printf(i18n.T("(build finished, %s/ and links are intact; only the merge step is incomplete — fix the issue and rerun agsy apply)\n"), cfg.Build.Out)
+			return 1
+		}
+		newM.Merges = recs
+		for _, mp := range merges {
+			if mp.State == mount.MergeIdle {
+				fmt.Printf(i18n.T("✔ merge skipped: %s (no hook entries to merge, file untouched)\n"), filepath.Join(mp.Dir, mp.Name))
+				continue
+			}
+			fmt.Printf(i18n.T("✔ merge done: %s ← %s\n"), filepath.Join(mp.Dir, mp.Name), filepath.Base(mp.Registry))
+		}
+	}
+	// Orphaned merge targets keep their record (status keeps reporting them,
+	// clean strips them) and are listed below with the orphaned links.
+	mergeOrphans, err := mount.MergeOrphans(cfg, oldMerges)
+	if err != nil {
+		return errExit(err)
+	}
+	for _, o := range mergeOrphans {
+		if r := mount.FindRecord(cfg, oldMerges, o); r != nil {
+			newM.Merges = append(newM.Merges, *r)
+		}
+	}
 
 	// Record the links this apply created (orphan detection needs them), then
 	// surface links a previous apply created that this config no longer
@@ -210,7 +291,26 @@ func cmdApply() int {
 		}
 		fmt.Println(i18n.T("  Tools reading those directories still see old content. Delete them manually, or agsy clean removes them together with everything else agsy built."))
 	}
+	if len(mergeOrphans) > 0 {
+		fmt.Printf(i18n.T("⚠ %d files merged by a previous apply are no longer named by the current mount config but still hold agsy hook entries:\n"), len(mergeOrphans))
+		for _, o := range mergeOrphans {
+			fmt.Println("  -", o)
+		}
+		fmt.Println(i18n.T("  The tool keeps running those old hooks. Remove the entries by hand, or agsy clean strips them together with everything else agsy built."))
+	}
 	return 0
+}
+
+// mergeRecords returns newer plus every older record whose path newer does
+// not carry.
+func mergeRecords(cfg *config.Config, newer, older []build.MergeRecord) []build.MergeRecord {
+	out := append([]build.MergeRecord{}, newer...)
+	for _, o := range older {
+		if mount.FindRecord(cfg, newer, mount.RecordAbs(cfg, o.Path)) == nil {
+			out = append(out, o)
+		}
+	}
+	return out
 }
 
 // printSourceChanges prints list A: informational, no confirmation needed —
@@ -255,6 +355,8 @@ func printArtifactChanges(cfg *config.Config, rep *state.Report, forApply bool) 
 			fmt.Printf(i18n.T("  added    %s   to keep it: move it into a source directory\n"), a.Path)
 		case a.Item != nil && a.Item.Category == "agents-md":
 			fmt.Printf(i18n.T("  modified %s   derived from the rules; to keep the change: edit the matching source rule (see the <!-- agsy: --> markers)\n"), a.Path)
+		case a.Item != nil && a.Item.Category == "hooks-registry":
+			fmt.Printf(i18n.T("  modified %s   derived from the hooks; to keep the change: edit the matching hook.yaml in a source\n"), a.Path)
 		case a.Derived:
 			fmt.Printf(i18n.T("  modified %s   derived form; to keep the change: edit the source %s\n"), a.Path, fromLabel(cfg, a.Item.From))
 		default:
@@ -263,6 +365,21 @@ func printArtifactChanges(cfg *config.Config, rep *state.Report, forApply bool) 
 				files = fmt.Sprintf(i18n.T(" (%d files)"), n)
 			}
 			fmt.Printf(i18n.T("  modified %s%s   to keep it: merge into the source %s\n"), a.Path, files, fromLabel(cfg, a.Item.From))
+		}
+	}
+}
+
+// printMergeChanges lists merge targets whose agsy entries were edited on
+// the artifact side; the next apply rebuilds those groups.
+func printMergeChanges(rep *state.Report, forApply bool) {
+	for _, mp := range rep.Merges {
+		if mp.State != mount.MergeModified {
+			continue
+		}
+		if forApply {
+			fmt.Printf(i18n.T("  modified %s   agsy entries in the \"hooks\" key were edited; to keep them: move them into your own group or a personal-level settings file\n"), filepath.Join(mp.Dir, mp.Name))
+		} else {
+			fmt.Printf(i18n.T("  modified %s   agsy entries in the \"hooks\" key were edited (apply rebuilds them); to keep them: move them into your own group or a personal-level settings file\n"), filepath.Join(mp.Dir, mp.Name))
 		}
 	}
 }
@@ -312,12 +429,14 @@ func adapterLinkCandidates(cfg *config.Config) []string {
 				add(filepath.Join(abs, config.AgentsMD))
 			}
 		}
-		abs, err := cfg.ExpandPath(a.Mount.Dir)
-		if err != nil {
-			continue
-		}
-		for name := range a.Mount.Links {
-			add(filepath.Join(abs, name))
+		for _, m := range a.Mounts {
+			abs, err := cfg.ExpandPath(m.Dir)
+			if err != nil {
+				continue
+			}
+			for name := range m.Links {
+				add(filepath.Join(abs, name))
+			}
 		}
 	}
 	sort.Strings(out)

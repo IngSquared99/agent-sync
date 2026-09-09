@@ -1,13 +1,15 @@
 # Google Antigravity mount preset
 # Antigravity reads rules from the root AGENTS.md (so .agents/rules is not
-# mounted — that would duplicate every rule), skills from .agents/skills/, and
+# mounted — that would duplicate every rule), skills from .agents/skills/,
 # /name workflows from .agents/workflows/ (agsy places redirect stubs there;
-# the full content lives in the derived skills).
+# the full content lives in the derived skills), and hooks from
+# .agents/hooks.json.
 name: antigravity
 display: Antigravity
 needs_agents_md: true
-mount:
-  dir: .agents
-  links:
-    skills: skills
-    workflows: workflows
+mounts:
+  - dir: .agents
+    links:
+      skills: skills
+      workflows: workflows
+      hooks.json: hooks.antigravity.json

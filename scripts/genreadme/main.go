@@ -8,6 +8,7 @@
 //   - headings are demoted one level; the chapter title becomes "## <letter>. …"
 //   - "→ next chapter" navigation lines are dropped
 //   - links to other doc pages are rewritten to the documentation site
+//   - image paths ../assets/… are rewritten to docs/assets/… (README sits in the root)
 package main
 
 import (
@@ -29,6 +30,10 @@ var chapters = []struct{ file, letter string }{
 // ](xxx.md) or ](xxx.md#anchor) → link into the docs site (anchors dropped:
 // the site uses its own anchor format)
 var mdLink = regexp.MustCompile(`\]\(([a-z]+)\.md(?:#[^)]*)?\)`)
+
+// ](../assets/x) → ](docs/assets/x): chapters reference images relative to
+// their own folder (docs/<lang>/); the README lives in the repository root.
+var assetLink = regexp.MustCompile(`\]\(\.\./assets/`)
 
 type language struct {
 	dir     string // docs subdirectory
@@ -95,6 +100,7 @@ func transform(raw string, l language, letter string) string {
 	}
 	s := strings.Join(out, "\n")
 	s = mdLink.ReplaceAllString(s, "]("+site+"/"+l.dir+"/$1)")
+	s = assetLink.ReplaceAllString(s, "](docs/assets/")
 	return strings.TrimSpace(s) + "\n"
 }
 
