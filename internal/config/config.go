@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"sort"
 	"strings"
 
 	"github.com/IngSquared99/agent-sync/i18n"
@@ -529,7 +530,7 @@ func (c *Config) validateMount() []string {
 			}
 		}
 		if len(m.Links) == 0 && len(m.Merge) == 0 {
-			errs = append(errs, fmt.Sprintf(i18n.T("mount %s is missing links"), m.Dir))
+			errs = append(errs, fmt.Sprintf(i18n.T("mount %s has neither links nor merge entries"), m.Dir))
 			continue
 		}
 		for name, sub := range m.Merge {
@@ -617,17 +618,34 @@ func (c *Config) validateHooksMount() []string {
 			linked[clean] = m.Dir + "/" + name
 		}
 	}
-	// A registry is consumed one way: linked as a whole file, or merged into
-	// a user file. Both at once means two places run the same hooks.
+	// A registry is consumed one way, in one place: linked as a whole file,
+	// or merged into one user file. Two consumers mean two places run the
+	// same hooks.
+	merged := map[string]string{} // registry → "dir/name" of the merge consuming it
 	for _, m := range c.Mount {
-		for name, sub := range m.Merge {
+		for _, name := range sortedKeys(m.Merge) {
+			sub := m.Merge[name]
 			clean := strings.Trim(filepath.ToSlash(sub), "/")
 			if via, both := linked[clean]; both {
 				errs = append(errs, fmt.Sprintf(i18n.T("mount %s merge.%s and link %s both consume %q; a registry is either linked or merged, keep one"), m.Dir, name, via, sub))
 			}
+			if via, twice := merged[clean]; twice {
+				errs = append(errs, fmt.Sprintf(i18n.T("mount %s merge.%s and merge %s both consume %q; a registry is merged into one file only, keep one"), m.Dir, name, via, sub))
+				continue
+			}
+			merged[clean] = m.Dir + "/" + name
 		}
 	}
 	return errs
+}
+
+func sortedKeys(m map[string]string) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	return keys
 }
 
 // HookRegistryMounted reports whether any link or merge entry consumes the

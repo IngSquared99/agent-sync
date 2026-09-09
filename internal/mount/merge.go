@@ -60,16 +60,44 @@ type kv struct {
 	raw json.RawMessage
 }
 
+// recordAbs resolves a project-relative record path against the project
+// directory.
+func recordAbs(cfg *config.Config, p string) string {
+	return filepath.Join(cfg.BaseDir, filepath.FromSlash(p))
+}
+
+// relRecord converts an absolute path inside the project into the form
+// records store: slash-separated, relative to the project directory.
+func relRecord(cfg *config.Config, abs string) string {
+	rel, err := filepath.Rel(cfg.BaseDir, abs)
+	if err != nil {
+		return filepath.ToSlash(abs)
+	}
+	return filepath.ToSlash(rel)
+}
+
+// insideProject reports whether abs lies inside the project directory.
+func insideProject(cfg *config.Config, abs string) bool {
+	return hasPathPrefix(abs, filepath.Clean(cfg.BaseDir)+string(filepath.Separator))
+}
+
 // ownerPrefixes lists the output hooks directories whose paths mark a group
 // as agsy's: the current one plus those recorded in the manifest. The
-// manifest is untrusted; a prefix only widens which groups under the hooks
-// key are rewritten, nothing outside that key.
+// manifest is untrusted: a recorded directory is accepted only inside the
+// project (the output always is; LoadManifest already rejects escaping
+// paths), so a tampered record cannot claim groups whose commands live
+// elsewhere, and a prefix only widens which groups under the hooks key are
+// rewritten, nothing outside that key.
 func ownerPrefixes(cfg *config.Config, records []build.MergeRecord) []string {
 	cur := filepath.Join(cfg.OutDir(), filepath.FromSlash(cfg.Build.Categories["hooks"].To))
 	out := []string{cur}
 	for _, r := range records {
-		if r.HooksDir != "" && filepath.Clean(r.HooksDir) != filepath.Clean(cur) && !containsPath(out, r.HooksDir) {
-			out = append(out, r.HooksDir)
+		if r.HooksDir == "" {
+			continue
+		}
+		dir := recordAbs(cfg, r.HooksDir)
+		if insideProject(cfg, dir) && !containsPath(out, dir) {
+			out = append(out, dir)
 		}
 	}
 	return out
@@ -109,7 +137,7 @@ func InspectMerge(cfg *config.Config, records []build.MergeRecord) ([]MergePlan,
 				FilePath: filepath.Join(mdir, name),
 				Registry: filepath.Join(out, filepath.FromSlash(sub)),
 			}
-			rec := findRecord(records, mp.FilePath)
+			rec := findRecord(cfg, records, mp.FilePath)
 			if rec != nil {
 				mp.Created = rec.Created
 			}
@@ -120,10 +148,19 @@ func InspectMerge(cfg *config.Config, records []build.MergeRecord) ([]MergePlan,
 	return plans, nil
 }
 
-func findRecord(records []build.MergeRecord, path string) *build.MergeRecord {
+// FindRecord exports findRecord for apply's record bookkeeping.
+func FindRecord(cfg *config.Config, records []build.MergeRecord, path string) *build.MergeRecord {
+	return findRecord(cfg, records, path)
+}
+
+// RecordAbs exports recordAbs.
+func RecordAbs(cfg *config.Config, p string) string { return recordAbs(cfg, p) }
+
+// findRecord returns the last record naming path (absolute).
+func findRecord(cfg *config.Config, records []build.MergeRecord, path string) *build.MergeRecord {
 	var rec *build.MergeRecord
 	for i := range records {
-		if filepath.Clean(records[i].Path) == filepath.Clean(path) && records[i].Key == MergeKey {
+		if recordAbs(cfg, records[i].Path) == filepath.Clean(path) && records[i].Key == MergeKey {
 			rec = &records[i]
 		}
 	}
@@ -272,33 +309,26 @@ func ownedGroups(path string, prefixes []string) (map[string][]json.RawMessage, 
 // MergeOrphans lists recorded merge targets the mount config no longer
 // names that still hold agsy groups. Reported by status, stripped by clean,
 // never touched by apply (same rule as orphaned links). Record paths are
-// untrusted: only paths inside the project directory are inspected (a
-// copied project must not reach into the original's files), and a file is
-// listed only when it verifiably holds agsy groups. Recorded paths outside
-// the project are never opened and come back as foreign, for status to
-// report as unchecked.
-func MergeOrphans(cfg *config.Config, records []build.MergeRecord) (orphans, foreign []string, err error) {
+// untrusted: only paths inside the project directory are inspected, and a
+// file is listed only when it verifiably holds agsy groups.
+func MergeOrphans(cfg *config.Config, records []build.MergeRecord) ([]string, error) {
 	plans, err := InspectMerge(cfg, records)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 	current := map[string]bool{}
 	for _, p := range plans {
 		current[filepath.Clean(p.FilePath)] = true
 	}
 	prefixes := ownerPrefixes(cfg, records)
-	base := filepath.Clean(cfg.BaseDir) + string(filepath.Separator)
+	var orphans []string
 	seen := map[string]bool{}
 	for _, r := range records {
-		p := filepath.Clean(r.Path)
-		if r.Key != MergeKey || current[p] || seen[p] {
+		p := recordAbs(cfg, r.Path)
+		if r.Key != MergeKey || current[p] || seen[p] || !insideProject(cfg, p) {
 			continue
 		}
 		seen[p] = true
-		if !hasPathPrefix(p, base) {
-			foreign = append(foreign, p)
-			continue
-		}
 		fi, err := os.Lstat(p)
 		if err != nil || !fi.Mode().IsRegular() {
 			continue
@@ -312,8 +342,7 @@ func MergeOrphans(cfg *config.Config, records []build.MergeRecord) (orphans, for
 		}
 	}
 	sort.Strings(orphans)
-	sort.Strings(foreign)
-	return orphans, foreign, nil
+	return orphans, nil
 }
 
 func toRaw(r build.RegistryGroups) map[string][]json.RawMessage {
@@ -356,6 +385,7 @@ func parseObject(raw []byte) ([]kv, error) {
 		return nil, errors.New(i18n.T("is not a JSON object"))
 	}
 	var members []kv
+	seen := map[string]bool{}
 	for dec.More() {
 		kt, err := dec.Token()
 		if err != nil {
@@ -366,6 +396,12 @@ func parseObject(raw []byte) ([]kv, error) {
 		if err := dec.Decode(&val); err != nil {
 			return nil, fmt.Errorf(i18n.T("is not valid JSON: %v"), err)
 		}
+		// A repeated key has no single value to preserve or replace; the
+		// file is left for the user to fix.
+		if seen[key] {
+			return nil, fmt.Errorf(i18n.T("has the key %q more than once; remove the duplicate"), key)
+		}
+		seen[key] = true
 		members = append(members, kv{key: key, raw: val})
 	}
 	if _, err := dec.Token(); err != nil {
@@ -443,7 +479,7 @@ func ApplyMerge(cfg *config.Config, plans []MergePlan, records []build.MergeReco
 	if len(bad) > 0 {
 		return nil, fmt.Errorf(i18n.T("the following merge targets cannot be updated (symbolic link or not a JSON object):\n  %s\nfix them manually, then retry"), strings.Join(bad, "\n  "))
 	}
-	hooksAbs := filepath.Join(cfg.OutDir(), filepath.FromSlash(cfg.Build.Categories["hooks"].To))
+	hooksRel := relRecord(cfg, filepath.Join(cfg.OutDir(), filepath.FromSlash(cfg.Build.Categories["hooks"].To)))
 	prefixes := ownerPrefixes(cfg, records)
 	var out []build.MergeRecord
 	for _, p := range plans {
@@ -454,11 +490,12 @@ func ApplyMerge(cfg *config.Config, plans []MergePlan, records []build.MergeReco
 		incoming := toRaw(reg)
 		_, exists := os.Lstat(p.FilePath)
 		created := exists != nil || p.Created
-		prior := shellsOf(findRecord(records, p.FilePath))
+		prior := shellsOf(findRecord(cfg, records, p.FilePath))
+		rel := relRecord(cfg, p.FilePath)
 		if len(incoming) == 0 && (exists != nil || p.Owned == 0) {
 			// Nothing to merge and nothing of agsy's in the file: the file
 			// is neither created nor rewritten.
-			out = append(out, build.MergeRecord{Path: p.FilePath, Key: MergeKey, Hash: emptyHash, Created: p.Created, HooksDir: hooksAbs})
+			out = append(out, build.MergeRecord{Path: rel, Key: MergeKey, Hash: emptyHash, Created: p.Created, HooksDir: hooksRel})
 			continue
 		}
 		added, err := writeMerged(p.FilePath, prefixes, incoming, reg.Order, prior)
@@ -466,7 +503,7 @@ func ApplyMerge(cfg *config.Config, plans []MergePlan, records []build.MergeReco
 			return out, fmt.Errorf(i18n.T("failed to merge into %s: %w"), p.FilePath, err)
 		}
 		out = append(out, build.MergeRecord{
-			Path: p.FilePath, Key: MergeKey, Hash: build.CanonicalHash(incoming), Created: created, HooksDir: hooksAbs,
+			Path: rel, Key: MergeKey, Hash: build.CanonicalHash(incoming), Created: created, HooksDir: hooksRel,
 			AddedKey: added.key, AddedEvents: added.events,
 		})
 	}
@@ -651,42 +688,53 @@ func atomicWrite(path string, data []byte) error {
 }
 
 // RemoveMerge strips agsy groups from every merge target (clean), orphaned
-// targets included. A file agsy created that becomes empty is deleted;
-// otherwise it is written back without agsy's groups. Idle targets are not
-// touched. Invalid targets are skipped and reported.
+// targets included. A file agsy created that holds nothing else (an empty
+// object, whether the strip emptied it or an earlier apply did) is deleted;
+// otherwise it is written back without agsy's groups. Idle and Absent
+// targets are otherwise left alone. Invalid targets are skipped and
+// reported; a file that cannot be deleted is an error.
 func RemoveMerge(cfg *config.Config, records []build.MergeRecord) (cleaned, deleted, skipped []string, err error) {
 	plans, err := InspectMerge(cfg, records)
 	if err != nil {
 		return nil, nil, nil, err
 	}
 	prefixes := ownerPrefixes(cfg, records)
+	// removeCreated deletes an agsy-created file that ended up as an empty
+	// object; reports whether it did.
+	removeCreated := func(path string, created bool) (bool, error) {
+		if !created || !isEmptyObject(path) {
+			return false, nil
+		}
+		if e := os.Remove(path); e != nil {
+			return false, fmt.Errorf(i18n.T("failed to remove %s (created by agsy, now empty): %w"), path, e)
+		}
+		deleted = append(deleted, path)
+		removeIfEmpty(filepath.Dir(path))
+		return true, nil
+	}
 	strip := func(path string, created bool) error {
-		if _, e := writeMerged(path, prefixes, nil, nil, shellsOf(findRecord(records, path))); e != nil {
+		if _, e := writeMerged(path, prefixes, nil, nil, shellsOf(findRecord(cfg, records, path))); e != nil {
 			return e
 		}
-		if created && isEmptyObject(path) {
-			if e := os.Remove(path); e == nil {
-				deleted = append(deleted, path)
-				removeIfEmpty(filepath.Dir(path))
-				return nil
-			}
+		removed, e := removeCreated(path, created)
+		if e != nil {
+			return e
 		}
-		cleaned = append(cleaned, path)
+		if !removed {
+			cleaned = append(cleaned, path)
+		}
 		return nil
 	}
 	for _, p := range plans {
 		switch p.State {
-		case MergeMissing, MergeIdle:
+		case MergeMissing:
 			continue
 		case MergeInvalid:
 			skipped = append(skipped, p.FilePath)
 			continue
-		case MergeAbsent:
-			if p.Created && isEmptyObject(p.FilePath) {
-				if e := os.Remove(p.FilePath); e == nil {
-					deleted = append(deleted, p.FilePath)
-					removeIfEmpty(filepath.Dir(p.FilePath))
-				}
+		case MergeAbsent, MergeIdle:
+			if _, e := removeCreated(p.FilePath, p.Created); e != nil {
+				return cleaned, deleted, skipped, e
 			}
 			continue
 		}
@@ -694,13 +742,13 @@ func RemoveMerge(cfg *config.Config, records []build.MergeRecord) (cleaned, dele
 			return cleaned, deleted, skipped, e
 		}
 	}
-	orphans, _, err := MergeOrphans(cfg, records)
+	orphans, err := MergeOrphans(cfg, records)
 	if err != nil {
 		return cleaned, deleted, skipped, err
 	}
 	for _, o := range orphans {
 		created := false
-		if rec := findRecord(records, o); rec != nil {
+		if rec := findRecord(cfg, records, o); rec != nil {
 			created = rec.Created
 		}
 		if e := strip(o, created); e != nil {

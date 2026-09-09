@@ -256,8 +256,8 @@ func cmdPlan() int {
 	// "skipped" would make the numbers impossible to reconcile: the former are
 	// same-name items actively discarded by the first strategy, the latter are
 	// files that do not match the inclusion rules.
-	fmt.Printf(i18n.T("%d items │ %d renamed │ %d conflicts │ %d name collisions │ %d dropped (first) │ %d excluded │ %d links │ %d mount anomalies │ %d mount conflicts\n"),
-		p.Placed(), renames, len(p.Conflicts), len(p.Collisions), len(p.Skipped), len(p.Ignored), len(links)+len(merges), staleCnt, realCnt+mergeBad)
+	fmt.Printf(i18n.T("%d items │ %d renamed │ %d conflicts │ %d name collisions │ %d dropped (first) │ %d excluded │ %d links │ %d merges │ %d mount anomalies │ %d mount conflicts\n"),
+		p.Placed(), renames, len(p.Conflicts), len(p.Collisions), len(p.Skipped), len(p.Ignored), len(links), len(merges), staleCnt, realCnt+mergeBad)
 	fmt.Println(i18n.T("\nNo files were written. Run agsy apply once everything looks right."))
 
 	if len(p.Conflicts) > 0 || len(p.Collisions) > 0 || len(p.RouteErrors) > 0 {

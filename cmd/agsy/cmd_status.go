@@ -156,14 +156,13 @@ func cmdStatus(withMenu bool) int {
 	for _, o := range rep.MergeOrphans {
 		fmt.Printf(i18n.T("%s → ⚠ merged by an earlier apply but no longer named by the mount config; it still holds agsy hook entries — remove them by hand or run agsy clean\n"), o)
 	}
-	printForeignMerges(rep.ForeignMerges)
 
 	fmt.Println(i18n.T("\n═══ summary ═══"))
 	fmt.Printf(i18n.T("source changes %d │ artifact-side changes %d │ missing outputs %d │ mount anomalies %d\n"),
 		len(rep.SourceChanges)+len(rep.News), len(rep.Artifacts)+modifiedMerges, len(rep.Gone), rep.LinkBad+rep.MergeBad)
 	if len(rep.Artifacts) > 0 || modifiedMerges > 0 {
 		fmt.Println(i18n.T("suggestion: move anything worth keeping into a source first, then run agsy apply"))
-	} else if len(rep.SourceChanges) > 0 || len(rep.News) > 0 || len(rep.Gone) > 0 || rep.LinkBad > len(rep.Orphans) || rep.MergeBad > len(rep.MergeOrphans)+len(rep.ForeignMerges) {
+	} else if len(rep.SourceChanges) > 0 || len(rep.News) > 0 || len(rep.Gone) > 0 || rep.LinkBad > len(rep.Orphans) || rep.MergeBad > len(rep.MergeOrphans) {
 		fmt.Println(i18n.T("suggestion: run agsy apply to rebuild"))
 	}
 	if len(rep.Orphans) > 0 {

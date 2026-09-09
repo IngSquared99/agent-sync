@@ -179,6 +179,8 @@ events:                                       # 必填；至少一個事件
 
 事件名用 Claude Code / Codex 的命名，其他兩家由 agsy 翻譯。「—」代表該家沒有這個時機，翻譯時略過並在 plan 註明。
 
+這張表收的是四家共有的部分，不是每家的全部：Claude Code 自己還有很多事件（`PermissionDenied`、`PostToolBatch`、`Elicitation`……），`hook.yaml` 寫表外的名字會被拒絕。只有一家能跑的 hook 放在那家自己的設定檔；若某個事件有好幾家都支援卻不在表上，請開 issue。
+
 | 事件 | claude | codex | antigravity | cursor |
 |---|---|---|---|---|
 | `PreToolUse` | ✓ | ✓ | ✓ | `preToolUse` |
@@ -224,7 +226,7 @@ events:                                       # 必填；至少一個事件
  登記表        command: python3 /Users/me/proj/.agsy/hooks/block-rm/check.py
 ```
 
-- 改寫後的路徑含空白或特殊字元時自動加引號。來源裡**不要自己加引號**（`"./x.sh"` 會被拒絕）。
+- 改寫後的路徑含空白或特殊字元時自動加引號。來源裡**不要自己加引號**（`"./x.sh"` 會被拒絕），也不要把 `./` 路徑放進引號字串裡（`sh -c 'echo ./x.sh'` 同樣被拒絕：改寫會弄壞引號）。
 - 引用的檔案必須存在於 hook 資料夾內，否則 apply 拒絕；override 裡的 command 也一樣。
 - 登記表裡的是這台機器的絕對路徑，每台機器各自 apply。
 
@@ -270,7 +272,7 @@ Claude Code 的 hooks 寫在 `.claude/settings.json` 的 `hooks` 欄位，那份
 `hooks` 底下的一個群組，只要有任一 handler 符合其中一項，就算 agsy 的：
 
 - `statusMessage` 以 `agsy:` 開頭。agsy 寫出的每一筆都帶 `agsy:<hook 名>`；`hook.yaml` 自己寫的 `statusMessage` 接在後面（`agsy:block-rm · linting`）。
-- `command` 的路徑指向 `.agsy/hooks/`（目前的產物資料夾，或 manifest 記錄的那個）。
+- `command` 的路徑指向 `.agsy/hooks/`（目前的產物資料夾，或 manifest 記錄的那個；記錄的資料夾只在專案內才算數）。
 
 記號與路徑無關，所以專案搬移、`build.out` 改名、command 不含 `./` 的群組都能認出來。
 
