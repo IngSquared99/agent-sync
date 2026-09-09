@@ -63,10 +63,18 @@ type Adapter struct {
 	// NeedsAgentsMD marks tools whose rules are read from the root AGENTS.md;
 	// init adds the root mount entry when any selected adapter sets it.
 	NeedsAgentsMD bool `yaml:"needs_agents_md"`
-	Mount         struct {
-		Dir   string            `yaml:"dir"`
-		Links map[string]string `yaml:"links"`
-	} `yaml:"mount"`
+	// Mounts lists every directory the tool reads from; a tool may need
+	// more than one (.agents for skills plus .codex for the hook registry).
+	Mounts []config.MountCfg `yaml:"mounts"`
+}
+
+// Dirs lists the adapter's mount dirs in file order (for labels).
+func (a Adapter) Dirs() []string {
+	var out []string
+	for _, m := range a.Mounts {
+		out = append(out, m.Dir)
+	}
+	return out
 }
 
 func loadAdapters() ([]Adapter, error) {

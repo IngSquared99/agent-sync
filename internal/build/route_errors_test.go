@@ -3,6 +3,7 @@ package build
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -55,5 +56,22 @@ func TestFrontMatterRequiresStandaloneClosingLine(t *testing.T) {
 	}
 	if fm == nil || fm["target"] != "claude" {
 		t.Errorf("front matter with CRLF closing line = %v", fm)
+	}
+}
+
+// A workflow target that is not a string or a list of strings is a route
+// error, not "every tool".
+func TestWorkflowTargetMalformed(t *testing.T) {
+	cfg, lib, _ := setupTwoSources(t, "rename", "error")
+	writeFile(t, filepath.Join(lib, "workflows", "bad1.md"), "---\ntarget: 42\n---\nx\n")
+	writeFile(t, filepath.Join(lib, "workflows", "bad2.md"), "---\ntarget: [claude, 42]\n---\nx\n")
+	p := compute(t, cfg)
+	if len(p.RouteErrors) != 2 {
+		t.Fatalf("RouteErrors = %v, want both files listed", p.RouteErrors)
+	}
+	for _, e := range p.RouteErrors {
+		if !strings.Contains(e, "must be a tool name or a list of tool names") {
+			t.Errorf("unexpected error text: %s", e)
+		}
 	}
 }

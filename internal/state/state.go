@@ -69,9 +69,12 @@ type Report struct {
 	ForeignFrom    []string         // manifest From paths outside the configured sources (untrusted, never compared)
 	ScanErr        error            // non-nil when the source scan failed and new-item detection did not run
 	Links          []mount.LinkPlan
-	Orphans        []string // links created by an earlier apply that the current mount config no longer references
-	LinkBad        int      // number of links that are missing, occupied, or orphaned
-	MissingSources []string // sources whose whole path is missing (as originally written); reported first
+	Merges         []mount.MergePlan // merge targets (Claude settings.json); Modified/Absent/Missing/Invalid count as gaps
+	MergeBad       int               // merge targets that are neither Clean nor Idle, plus merge orphans
+	MergeOrphans   []string          // files an earlier apply merged into that the mount config no longer names, still holding agsy groups
+	Orphans        []string          // links created by an earlier apply that the current mount config no longer references
+	LinkBad        int               // number of links that are missing, occupied, or orphaned
+	MissingSources []string          // sources whose whole path is missing (as originally written); reported first
 	HasGap         bool
 }
 
@@ -244,7 +247,30 @@ func Collect(cfg *config.Config, m *build.Manifest) (*Report, error) {
 	sort.Strings(r.Orphans)
 	r.LinkBad += len(r.Orphans)
 
+	// Merge targets: ownership is re-derived from the file, the manifest only
+	// supplies the hash of the last write. Modified means the artifact side
+	// changed (apply overwrites after confirmation); Missing/Absent mean the
+	// entries are gone (apply restores); Invalid blocks apply.
+	merges, err := mount.InspectMerge(cfg, m.Merges)
+	if err != nil {
+		return nil, err
+	}
+	r.Merges = merges
+	for _, mp := range merges {
+		if mp.State != mount.MergeClean && mp.State != mount.MergeIdle {
+			r.MergeBad++
+		}
+	}
+	// Same rule as orphaned links: a merge target dropped from the config
+	// still holds agsy's entries until clean or a manual edit removes them.
+	orphans, err := mount.MergeOrphans(cfg, m.Merges)
+	if err != nil {
+		return nil, err
+	}
+	r.MergeOrphans = orphans
+	r.MergeBad += len(orphans)
+
 	r.HasGap = len(r.SourceChanges) > 0 || len(r.News) > 0 || len(r.Artifacts) > 0 ||
-		len(r.Gone) > 0 || len(r.RouteErrors) > 0 || len(r.ForeignFrom) > 0 || r.LinkBad > 0
+		len(r.Gone) > 0 || len(r.RouteErrors) > 0 || len(r.ForeignFrom) > 0 || r.LinkBad > 0 || r.MergeBad > 0
 	return r, nil
 }

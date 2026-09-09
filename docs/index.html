@@ -34,7 +34,16 @@
         noData: { '/en/': 'No results', '/': '找不到結果' },
         depth: 3,
         pathNamespaces: ['/zh-TW', '/en']
-      }
+      },
+      plugins: [
+        // Chapters reference images as ../assets/… (relative to docs/<lang>/,
+        // which is what GitHub renders); the site serves docs/ as its root.
+        function (hook) {
+          hook.beforeEach(function (content) {
+            return content.replace(/\]\(\.\.\/assets\//g, '](assets/');
+          });
+        }
+      ]
     }
   </script>
   <script src="https://cdn.jsdelivr.net/npm/docsify@4"></script>
