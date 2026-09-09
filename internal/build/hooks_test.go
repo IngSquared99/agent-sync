@@ -807,7 +807,7 @@ func TestLoadRegistryGroupsRejectsOtherShapes(t *testing.T) {
 // each unknown override tool and each missing ./ script, deduplicated.
 func TestHookRouteErrorsListedTogether(t *testing.T) {
 	cfg, lib := setupHooks(t, "error")
-	writeFile(t, filepath.Join(lib, "hooks", "block-rm", "hook.yaml"), `target: [claude, nope, 42]
+	writeFile(t, filepath.Join(lib, "hooks", "block-rm", "hook.yaml"), `target: [claude, nope, gone]
 events:
   PreToolUse:
     - hooks:
@@ -826,7 +826,7 @@ events:
 	p := compute(t, cfg)
 	want := []string{
 		`target refers to unknown tool "nope"`,
-		`target refers to unknown tool "42"`,
+		`target refers to unknown tool "gone"`,
 		`overrides refers to unknown tool "ghost"`,
 		"refers to ./missing-a.sh",
 		"refers to ./missing-b.sh",
@@ -871,5 +871,63 @@ func TestHookNameFallback(t *testing.T) {
 	}
 	if !found {
 		t.Fatal("hook ___ not collected")
+	}
+}
+
+// A target that is not a string or a list of strings (a number, a map, a
+// list holding a number) is reported, never read as "every tool".
+func TestHookTargetMalformed(t *testing.T) {
+	for _, target := range []string{"target: 123", "target: {a: b}", "target: [claude, 42]"} {
+		cfg, lib := setupHooks(t, "error")
+		writeFile(t, filepath.Join(lib, "hooks", "block-rm", "hook.yaml"), target+`
+events:
+  PreToolUse:
+    - hooks:
+        - command: ./block-rm.sh
+`)
+		p := compute(t, cfg)
+		joined := strings.Join(p.RouteErrors, "\n")
+		if !strings.Contains(joined, "must be a tool name or a list of tool names") {
+			t.Errorf("%s: expected a malformed-target error, got:\n%s", target, joined)
+		}
+	}
+}
+
+// Empty groups are reported with their index so two of them under one
+// event read as two findings.
+func TestHookEmptyGroupsIndexed(t *testing.T) {
+	cfg, lib := setupHooks(t, "error")
+	writeFile(t, filepath.Join(lib, "hooks", "block-rm", "hook.yaml"), `events:
+  PreToolUse:
+    - matcher: a
+    - matcher: b
+`)
+	p := compute(t, cfg)
+	joined := strings.Join(p.RouteErrors, "\n")
+	for _, w := range []string{"group 1 of PreToolUse has no handlers", "group 2 of PreToolUse has no handlers"} {
+		if !strings.Contains(joined, w) {
+			t.Errorf("missing %q in:\n%s", w, joined)
+		}
+	}
+}
+
+// hasQuotedLocalPath: the two tokenizers must agree on the ./ paths a
+// command names.
+func TestQuotedLocalPathForms(t *testing.T) {
+	cases := map[string]bool{
+		"./a.sh":                false,
+		"python3 ./a.py --x":    false,
+		"echo a./b":             false,
+		`"./a.sh"`:              true,
+		`'./a b.sh'`:            true,
+		`sh -c 'echo ./a.sh'`:   true,
+		`sh -c "cd ./x && ./y"`: true,
+		`./a.sh 'plain arg'`:    false,
+		`./a.sh "arg ./not-me"`: true,
+	}
+	for cmd, want := range cases {
+		if got := hasQuotedLocalPath(cmd); got != want {
+			t.Errorf("hasQuotedLocalPath(%q) = %v, want %v", cmd, got, want)
+		}
 	}
 }

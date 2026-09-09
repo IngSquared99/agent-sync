@@ -179,6 +179,8 @@ The shape of a hook:
 
 Events use the Claude Code / Codex names; agsy translates for the other two. "—" means that tool has no such moment; it is skipped, with a note in plan.
 
+The set is the union of what the four tools share, not everything each vendor offers: Claude Code alone has many more events (`PermissionDenied`, `PostToolBatch`, `Elicitation`, …), and `hook.yaml` refuses names outside the table. A hook that only one tool can run belongs in that tool's own settings file; open an issue if an event is missing here for several tools.
+
 | Event | claude | codex | antigravity | cursor |
 |---|---|---|---|---|
 | `PreToolUse` | ✓ | ✓ | ✓ | `preToolUse` |
@@ -224,7 +226,7 @@ Every whitespace-separated token of `command` that starts with `./` is rewritten
  registry      command: python3 /Users/me/proj/.agsy/hooks/block-rm/check.py
 ```
 
-- A rewritten path with spaces or special characters is quoted automatically. **Do not quote a `./` path yourself** (`"./x.sh"` is refused).
+- A rewritten path with spaces or special characters is quoted automatically. **Do not quote a `./` path yourself** (`"./x.sh"` is refused), and do not put one inside a quoted string (`sh -c 'echo ./x.sh'` is refused too: the rewrite would break the quoting).
 - The referenced file must exist inside the hook folder, or apply refuses; override commands included.
 - The registry holds this machine's absolute paths; every machine runs its own apply.
 
@@ -270,7 +272,7 @@ Claude Code's hooks live in the `hooks` field of `.claude/settings.json`, a file
 A group under `hooks` counts as agsy's when any of its handlers matches either clue:
 
 - `statusMessage` starts with `agsy:`. Every handler agsy writes carries `agsy:<hook name>`; a `statusMessage` from `hook.yaml` follows it (`agsy:block-rm · linting`).
-- The `command` path points into `.agsy/hooks/` (the current output folder, or the one recorded in the manifest).
+- The `command` path points into `.agsy/hooks/` (the current output folder, or the one recorded in the manifest; a recorded folder counts only inside the project).
 
 The mark is path-independent, so groups survive a moved project, a renamed `build.out`, and a command without any `./` path.
 

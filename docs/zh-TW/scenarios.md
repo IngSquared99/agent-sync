@@ -81,9 +81,8 @@ agsy apply
 | 你加了自己的群組、改了 permissions、model 等其他欄位 | 不算異常 | apply 與 clean 都不動 |
 | agsy 的條目被刪，或整個檔案被刪 | ✘ 條目不見了 | `agsy apply` |
 | 檔案不是 JSON 物件（壞掉、是陣列）或是符號連結 | ✘ 修好前 apply 拒絕 | 手動修；clean 會跳過並回報 |
-| 來源裡沒有任何 hook | 沒有東西可合併 ✔ | 檔案不存在不建立；存在也不改寫 |
+| 來源裡沒有任何 hook | 沒有東西可合併 ✔ | 檔案不存在不建立；存在也不改寫。先前由 agsy 建立的檔會留成 `{}`，`agsy clean` 會刪掉它 |
 | `merge` 條目已從 `agsy.yaml` 移除 | ⚠ 孤兒：仍有 agsy 條目 | apply 不碰、持續回報；手動移除或 `agsy clean` |
-| manifest 記錄的 merge 目標在專案外 | ⚠ 未檢查 | agsy 不開專案外的檔；自己打開並移除 `agsy:` 開頭的條目 |
 | 專案搬移或 `build.out` 改名 | apply 之後同步 ✔ | 舊群組靠 `agsy:` 記號認出並取代 |
 
 ## 七、apply 在建置前就停下的條件
@@ -94,7 +93,7 @@ agsy apply
 |------|---------|------|
 | 任一來源路徑不存在 | 拒絕以不完整的清單重建 | 修好路徑（clone、掛磁碟、改錯字） |
 | 掛載點被真實路徑佔用 | 拒絕並列出 | 自己搬走或刪除 |
-| workflow target 錯誤、`hook.yaml` 錯誤（解析失敗、未知事件、缺 command、`./` 加了引號、override 索引超出或清空 command、引用的腳本不存在） | 列出待修檔案 | 修 front matter 或 `hook.yaml`，或補 `build.tools` |
+| workflow target 錯誤（未知工具，或 `target` 不是名稱也不是名稱清單）、`hook.yaml` 錯誤（解析失敗、未知事件、缺 command、`./` 加了引號或放在引號字串裡、override 索引超出或清空 command、引用的腳本不存在） | 列出待修檔案 | 修 front matter 或 `hook.yaml`，或補 `build.tools` |
 | merge 目標是符號連結或不是 JSON 物件 | 拒絕並列出 | 手動修 `.claude/settings.json` |
 | 掛載點被真實的 `hooks.json` 佔用 | 拒絕並列出 | 把內容改寫成來源裡的 hook，再刪該檔 |
 | 同名衝突（`on_conflict: error`） | 列出衝突組 | 改名或刪一份 |

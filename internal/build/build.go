@@ -97,19 +97,24 @@ type Manifest struct {
 	// Merges records the JSON files apply merged hook entries into (Claude
 	// Code's settings.json). Untrusted as well: consumers re-derive ownership
 	// from the file content and only use the record for hashes and the
-	// created flag.
+	// created flag. Written by Execute first (carried over from the previous
+	// apply) so a build that fails halfway keeps them, then replaced by the
+	// merge step.
 	Merges []MergeRecord `json:"merges,omitempty"`
 }
 
-// MergeRecord is one merge target written by the last apply.
+// MergeRecord is one merge target written by the last apply. Paths are
+// slash-separated and relative to the project directory: merge targets and
+// the output both live inside the project, so the record stays valid when
+// the project is moved or cloned elsewhere.
 type MergeRecord struct {
-	Path    string `json:"path"`    // absolute path of the merged file
+	Path    string `json:"path"`    // project-relative path of the merged file
 	Key     string `json:"key"`     // top-level key holding the entries (always "hooks")
 	Hash    string `json:"hash"`    // canonical hash of the agsy-owned entries written
 	Created bool   `json:"created"` // the file did not exist before apply created it
-	// HooksDir is the absolute output hooks directory the written command
-	// paths point into; inspect accepts it as an ownership prefix alongside
-	// the current one (build.out renamed since).
+	// HooksDir is the project-relative output hooks directory the written
+	// command paths point into; inspect accepts it as an ownership prefix
+	// alongside the current one (build.out renamed since).
 	HooksDir string `json:"hooksDir,omitempty"`
 	// AddedKey and AddedEvents name the containers apply introduced (the
 	// "hooks" key, event arrays). Those are removed when empty; containers
@@ -623,15 +628,11 @@ func filterWorkflows(cfg *config.Config, p *Plan) error {
 				// silently overriding the author's explicit false.
 				it.RouteNote = appendNote(it.RouteNote, i18n.T("front matter disable-model-invocation: false is ignored: workflow-derived skills are always human-triggered"))
 			}
-			switch v := fm[TargetField].(type) {
-			case string:
-				targets = []string{v}
-			case []interface{}:
-				for _, x := range v {
-					if s, ok := x.(string); ok {
-						targets = append(targets, s)
-					}
-				}
+			var malformed bool
+			targets, malformed = TargetList(fm[TargetField])
+			if malformed {
+				p.RouteErrors = append(p.RouteErrors, fmt.Sprintf(i18n.T("%s: %s must be a tool name or a list of tool names"), it.Name, TargetField))
+				continue
 			}
 		}
 		if len(targets) == 0 {
@@ -695,6 +696,15 @@ func (p *Plan) Placed() int {
 // The caller (apply) must confirm artifact-side changes first; must not be
 // called while conflicts (error strategy) exist.
 func Execute(cfg *config.Config, p *Plan) (*Manifest, error) {
+	return ExecuteWith(cfg, p, nil)
+}
+
+// ExecuteWith is Execute carrying the previous apply's merge records: they
+// are written into a minimal manifest right after the output is wiped, so a
+// build that fails before the full manifest exists does not lose the
+// created flags, added containers and previous hooks directory that the
+// merge step and clean depend on.
+func ExecuteWith(cfg *config.Config, p *Plan, prior []MergeRecord) (*Manifest, error) {
 	if len(p.Conflicts) > 0 {
 		return nil, fmt.Errorf(i18n.T("unresolved name conflicts exist, cannot build"))
 	}
@@ -712,9 +722,14 @@ func Execute(cfg *config.Config, p *Plan) (*Manifest, error) {
 	if err := RemoveOut(cfg); err != nil {
 		return nil, err
 	}
-	m := &Manifest{Version: ManifestVersion, BuiltAt: time.Now().Format(time.RFC3339)}
+	m := &Manifest{Version: ManifestVersion, BuiltAt: time.Now().Format(time.RFC3339), Merges: prior}
 	for _, s := range p.Sources {
 		m.Sources = append(m.Sources, s.Abs)
+	}
+	// The merge records outlive the build: write them before anything else
+	// so an error below leaves a manifest that still carries them.
+	if err := WriteManifest(out, m); err != nil {
+		return nil, err
 	}
 	addOut := func(mi *ManifestItem, rel string, derived bool) error {
 		full := filepath.Join(out, filepath.FromSlash(rel))
@@ -984,6 +999,19 @@ func LoadManifest(out string) (*Manifest, error) {
 		// it); a relative one can only come from tampering.
 		if it.From != "" && !filepath.IsAbs(it.From) {
 			return nil, fmt.Errorf(i18n.T("manifest contains an invalid source path %q; it may be tampered with — remove the output directory and run agsy apply to rebuild"), it.From)
+		}
+	}
+	// Merge records name files apply rewrites and directories whose paths
+	// mark hook groups as agsy's; both are project-relative and must not
+	// escape the project.
+	for _, r := range m.Merges {
+		for i, p := range []string{r.Path, r.HooksDir} {
+			if p == "" && i == 1 {
+				continue // HooksDir is optional
+			}
+			if p == "" || !filepath.IsLocal(filepath.FromSlash(p)) {
+				return nil, fmt.Errorf(i18n.T("manifest contains an invalid merge record path %q; it may be tampered with — remove the output directory and run agsy apply to rebuild"), p)
+			}
 		}
 	}
 	return m, nil

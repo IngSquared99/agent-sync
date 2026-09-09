@@ -147,3 +147,23 @@ func TestRegistryLinkedAndMergedRefused(t *testing.T) {
 		"    links: {rules: rules, hooks.json: hooks.claude.json}\n    merge: {settings.json: hooks.claude.json}\n", 1)
 	mustFail(t, body, "a registry is either linked or merged")
 }
+
+// One registry is merged into one file only: two merge entries (in one
+// mount or across mounts) naming the same registry would run its hooks
+// twice.
+func TestRegistryMergedTwiceRefused(t *testing.T) {
+	body := strings.Replace(baseYAML,
+		"    links: {rules: rules, skills: skills}\n",
+		"    links: {rules: rules, skills: skills}\n    merge: {settings.json: hooks.claude.json, settings.local.json: hooks.claude.json}\n", 1)
+	mustFail(t, body, "a registry is merged into one file only")
+	body = strings.Replace(baseYAML,
+		"    links: {rules: rules, skills: skills}\n",
+		"    links: {rules: rules, skills: skills}\n    merge: {settings.json: hooks.claude.json}\n  - dir: .other\n    merge: {settings.json: hooks.claude.json}\n", 1)
+	mustFail(t, body, "a registry is merged into one file only")
+}
+
+// A mount with neither links nor merge entries names both in its error.
+func TestMountNeedsLinksOrMerge(t *testing.T) {
+	body := strings.Replace(baseYAML, "    links: {rules: rules, skills: skills}\n", "    links: {}\n", 1)
+	mustFail(t, body, "has neither links nor merge entries")
+}
