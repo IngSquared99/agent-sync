@@ -112,7 +112,7 @@ agsy 不會合併或覆蓋真實檔案：`init` 提醒、`apply` 拒絕，直到
 
 1. 在每個專案跑 `agsy clean`。
 2. 不要 `agsy.yaml` 的話手動刪。
-3. 依安裝方式移除執行檔：`brew uninstall agsy`、`winget uninstall IngSquared99.agsy`、或刪 `~/go/bin/agsy`。
+3. 依安裝方式移除執行檔：`brew uninstall agsy` 或刪 `~/go/bin/agsy`。
 
 ### Q23：status 說有「孤兒連結」？
 

@@ -189,10 +189,9 @@ Pick one method for your operating system. Confirm with `agsy version` afterward
 | Your system | Use | Needs |
 |-------------|-----|-------|
 | macOS | Method 1: Homebrew | Homebrew installed |
-| Windows 10 / 11 | Method 2: winget | nothing, it is built in |
-| Linux, or building yourself | Method 3: Go source | Go 1.22 or newer |
+| Windows 10 / 11, Linux, or building yourself | Method 2: Go source | Go 1.22 or newer |
 
-Methods 1 and 2 download the prebuilt binary from GitHub Releases, compiled by a public CI run from public source; the install definitions pin each file's SHA-256 checksum. Method 3 compiles the source on your own machine. agsy has no external dependencies.
+Method 1 downloads the prebuilt binary from GitHub Releases, compiled by a public CI run from public source; the install definition pins each file's SHA-256 checksum. Method 2 compiles the source on your own machine; there is no winget package for Windows yet, use Method 2 there. agsy has no external dependencies.
 
 <br>
 
@@ -206,15 +205,7 @@ brew install ingsquared99/tap/agsy
 
 The matching Apple Silicon or Intel build is picked automatically. The first run does not show an "unverified developer" warning. Without Homebrew: install it per <https://brew.sh>.
 
-#### Method 2: winget (Windows)
-
-```powershell
-winget install IngSquared99.agsy
-```
-
-Type it in PowerShell or cmd. **Open a new terminal window** afterwards before continuing.
-
-#### Method 3: from source (any platform)
+#### Method 2: from source (any platform)
 
 Without Go: macOS `brew install go`, Windows `winget install GoLang.Go`, Linux via your distribution (`apt install golang-go`, for example) or <https://go.dev/dl/>.
 
@@ -224,12 +215,14 @@ One line:
 go install github.com/IngSquared99/agent-sync/cmd/agsy@latest
 ```
 
-The binary lands in `~/go/bin/`. If the terminal cannot find `agsy` afterwards, that folder is not on PATH (the list of folders the terminal searches for commands):
+The binary lands in `~/go/bin/` (`%USERPROFILE%\go\bin\` on Windows). If the terminal cannot find `agsy` afterwards, that folder is not on PATH (the list of folders the terminal searches for commands):
 
 ```sh
 # macOS (zsh): add to the shell config, then open a new terminal; Linux (bash): ~/.bashrc
 echo 'export PATH="$HOME/go/bin:$PATH"' >> ~/.zshrc
 ```
+
+The Go installer for Windows usually adds that folder to PATH already; if not, add `%USERPROFILE%\go\bin` to the user Path under "Edit the system environment variables", then **open a new terminal window**.
 
 To read or modify the code first:
 
@@ -290,10 +283,10 @@ export AGSY_LANG=en       # English
 
 ### 5. Upgrade and remove
 
-| | Homebrew | winget | Go |
-|---|---|---|---|
-| Upgrade | `brew upgrade agsy` | `winget upgrade IngSquared99.agsy` | rerun `go install …@latest` |
-| Remove | `brew uninstall agsy` | `winget uninstall IngSquared99.agsy` | delete `~/go/bin/agsy` |
+| | Homebrew | Go |
+|---|---|---|
+| Upgrade | `brew upgrade agsy` | rerun `go install …@latest` |
+| Remove | `brew uninstall agsy` | delete `~/go/bin/agsy` |
 
 Before removing, run `agsy clean` in every project that used agsy (it removes the links and `.agsy/`; `agsy.yaml` stays, delete it yourself if unwanted).
 
