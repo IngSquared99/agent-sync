@@ -112,7 +112,7 @@ Yes:
 
 1. Run `agsy clean` in every project.
 2. Delete `agsy.yaml` by hand if unwanted.
-3. Remove the binary the way it was installed: `brew uninstall agsy`, `winget uninstall IngSquared99.agsy`, or delete `~/go/bin/agsy`.
+3. Remove the binary the way it was installed: `brew uninstall agsy` or delete `~/go/bin/agsy`.
 
 ### Q23: status reports an "orphan link".
 

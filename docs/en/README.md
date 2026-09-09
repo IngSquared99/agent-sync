@@ -7,7 +7,7 @@ The agsy documentation, ordered as "concepts → install → quick start → dee
 | Chapter | Covers |
 |---------|--------|
 | [Core Concepts](overview.md) | the problem it solves, the terms, the four categories, what each tool reads |
-| [Installation](install.md) | Homebrew / winget / from source, interface language, upgrade and removal |
+| [Installation](install.md) | Homebrew / from source, interface language, upgrade and removal |
 | [Quick Start](quickstart.md) | first sync in four steps, command cheat sheet |
 | [Configuration](config.md) | agsy.yaml field by field, hook.yaml, merge, error quick reference |
 | [Command Reference](commands.md) | command overview plus per-command details |
