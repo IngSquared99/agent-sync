@@ -4,7 +4,7 @@
 
 ## 一、問題：同一份規範要放四個地方
 
-現在的 AI 開發工具（Claude Code、OpenAI Codex、Google Antigravity、Cursor）都能讀「給 AI 看的指令檔」：編碼規範、技能、流程、守衛腳本。問題是每家讀的位置和格式都不一樣：
+現在的 AI 開發工具（Claude Code、OpenAI Codex、Google Antigravity、Cursor）都會讀「給 AI 看的指令檔」，最常見的就是編碼規範。問題是每家讀的位置和格式都不一樣：
 
 ```
  同一份「編碼規範」
@@ -13,18 +13,13 @@
    Codex        ──▶ AGENTS.md            （全部規範併成一個檔）
    Antigravity  ──▶ AGENTS.md
    Cursor       ──▶ AGENTS.md
-
- 同一份「擋下 rm -rf 的守衛」
-
-   Claude Code  ──▶ .claude/settings.json 裡的一小段
-   Codex        ──▶ .codex/hooks.json
-   Antigravity  ──▶ .agents/hooks.json
-   Cursor       ──▶ .cursor/hooks.json     （而且格式都不同）
 ```
 
-只要同時用兩家以上，每份指令就要維護好幾份副本，改一次要同步好幾次。
+技能（skills）、流程（workflows）也一樣各有各的位置。只要同時用兩家以上，或者手上有好幾個專案，每份指令就要維護好幾份副本，改一次要同步好幾次。
 
 ## 二、agsy 做的事：只維護一份，其他都是產出來的
+
+![一份正本，多個專案](../assets/one-source-many-projects.zh-TW.gif)
 
 agsy 是一個命令列工具。你只維護**一份**指令檔（叫「來源」），跑一次 `agsy apply`，它做三件事：
 
@@ -75,9 +70,28 @@ agsy 是一個命令列工具。你只維護**一份**指令檔（叫「來源�
 | workflows | 由人觸發的流程（輸入 `/名稱`） | 一個 `.md` 檔 | 做 |
 | hooks | 在 AI 動作前後執行的小程式；不合規就擋下，AI 不能選擇不遵守 | 一個含 `hook.yaml` 和腳本的資料夾 | 擋 |
 
-**rules 教、hooks 擋。** rules 是給 AI 讀的文字，遵不遵守有機率；hooks 是程式，在 AI 外面執行，擋下就是擋下。能寫成「如果…就不准」的規範用 hooks，風格偏好這類無法用程式判斷的用 rules。
+前三種都是「給 AI 讀的文字」，第四種 hooks 不太一樣，下一節單獨說明。
 
-## 五、每種類別產出什麼
+## 五、rules 與 hooks 的差別
+
+![rules 教、hooks 擋](../assets/rules-teach-hooks-block.zh-TW.gif)
+
+**rules 是文字，hooks 是程式。**
+
+rules 寫在 `.md` 檔裡，AI 讀了之後照做；但 AI 是機率性的，對話一長、跟任務目標衝突時，可能就不照做。hook 則是掛在 AI 工作流程固定時機上的一支小程式：例如「執行任何指令之前」（`PreToolUse`），AI 走到那裡會先暫停，把它打算做的事交給你的腳本檢查；腳本回傳結束碼 2 就擋下，AI 不能選擇不遵守。
+
+```
+ rules             AI 讀到「不可執行 rm -rf」  ──▶  通常照做，偶爾不照做
+ hooks   AI 要執行指令前 ──▶ 你的腳本檢查 ──▶ exit 2 擋下 ／ exit 0 放行
+```
+
+怎麼分：能寫成「如果…就不准」的規範（禁止碰的檔案、必跑的檢查、不准停的條件）用 hooks；風格與偏好這類無法用程式判斷的用 rules。兩層並用。
+
+在 agsy 裡，hook 也是來源的一種：一個資料夾放 `hook.yaml`（宣告在哪個時機、跑哪支腳本）和腳本本身。四家工具的 hook 機制相同，差別在登記的位置和格式，這一段由 agsy 翻譯：寫一次 `hook.yaml`，`apply` 之後四家的登記表都有它。
+
+還沒用到 hooks 也沒關係：來源裡沒有 `hooks/` 資料夾時，這一層什麼都不會發生。
+
+## 六、每種類別產出什麼
 
 ```
  來源                      產物（.agsy/）
@@ -96,7 +110,9 @@ agsy 是一個命令列工具。你只維護**一份**指令檔（叫「來源�
 
 workflow 為什麼變成 skill：Claude Code、Codex、Cursor 都是用 skills 機制讀流程，用檔頭的欄位決定誰能觸發。來源維持一個簡單的 `.md`，轉換由 agsy 做。Antigravity 是從 `workflows/` 資料夾用 `/名稱` 觸發，所以那裡留一個短短的「轉接頭」，告訴 AI 去載入對應的 skill。
 
-## 六、每家工具最後讀到什麼
+## 七、每家工具最後讀到什麼
+
+![同一份規範，四家工具](../assets/four-tools-one-apply.zh-TW.gif)
 
 | 工具 | rules | skills | workflows | hooks |
 |------|-------|--------|-----------|-------|
@@ -107,7 +123,7 @@ workflow 為什麼變成 skill：Claude Code、Codex、Cursor 都是用 skills �
 
 `.agents/skills/` 是 Codex、Antigravity、Cursor 三家共同讀的資料夾，一條連結服務三家。Claude Code 不讀 `AGENTS.md`，所以它另外掛 `.claude/rules/`。
 
-## 七、方向只有一個
+## 八、方向只有一個
 
 ```
  來源 ──▶ apply ──▶ 產物 ──▶ 連結 ──▶ 工具
@@ -115,13 +131,13 @@ workflow 為什麼變成 skill：Claude Code、Codex、Cursor 都是用 skills �
 
 來源是唯一的正本。產物和工具讀到的一切都是可重建的副本，沒有「從副本寫回正本」這回事。如果 AI 工具透過連結改了產物（例如替你加了一條規則），`agsy status` 會列出來；想保留就自己搬回來源，再 apply。這個手動步驟就是審核關卡：AI 產出的內容先經過人，才進入正本。
 
-## 八、agsy 只動 repo 裡的東西
+## 九、agsy 只動 repo 裡的東西
 
 - 來源可以在任何地方（例如家目錄的共用庫 `~/all-ai-lib`），agsy 只讀它。
 - 產物和連結都放在專案資料夾內。
 - 各工具的個人層設定（`~/.claude`、`~/.codex` 之類）不是 agsy 的寫入目標，那裡放你自己的東西。
 
-## 九、來源資料夾的命名
+## 十、來源資料夾的命名
 
 agsy 預設在每個來源裡找 `rules/`、`skills/`、`workflows/`、`hooks/` 四個子資料夾，缺哪個都沒關係。既有的庫用別的名字（例如 `prompts/`）時，設定檔的 `build.categories.<類別>.from` 可以直接指過去，不必搬檔案，見[設定檔](config.md)。
 

@@ -19,7 +19,7 @@ This chapter is about the problem and the approach, not about operating the tool
 
 ### 1. The problem: one set of rules, four places to keep it
 
-AI coding tools (Claude Code, OpenAI Codex, Google Antigravity, Cursor) all read "instruction files for the AI": coding conventions, skills, procedures, guard scripts. Each reads them from a different place, in a different shape:
+AI coding tools (Claude Code, OpenAI Codex, Google Antigravity, Cursor) all read "instruction files for the AI", most commonly coding conventions. Each reads them from a different place, in a different shape:
 
 ```
  one "coding conventions" file
@@ -28,20 +28,15 @@ AI coding tools (Claude Code, OpenAI Codex, Google Antigravity, Cursor) all read
    Codex        ──▶ AGENTS.md            (all rules in one file)
    Antigravity  ──▶ AGENTS.md
    Cursor       ──▶ AGENTS.md
-
- one "block rm -rf" guard
-
-   Claude Code  ──▶ a section inside .claude/settings.json
-   Codex        ──▶ .codex/hooks.json
-   Antigravity  ──▶ .agents/hooks.json
-   Cursor       ──▶ .cursor/hooks.json     (each in its own format)
 ```
 
-With two or more tools, every instruction exists as several copies, and every edit has to be repeated for each.
+Skills and workflows have their own locations too. With two or more tools, or several projects, every instruction exists as several copies, and every edit has to be repeated for each.
 
 <br>
 
 ### 2. What agsy does: maintain one copy, generate the rest
+
+![one original, many projects](docs/assets/one-source-many-projects.en.gif)
 
 agsy is a command-line tool. You maintain **one** set of instruction files (the "source"), run `agsy apply` once, and it does three things:
 
@@ -96,11 +91,32 @@ Instruction files come in four kinds, each in its own subfolder of a source.
 | workflows | Procedures a person triggers by typing `/name` | one `.md` file | do |
 | hooks | Small programs that run before or after the AI acts; they block what is not allowed, and the AI cannot opt out | a folder with `hook.yaml` and scripts | block |
 
-**Rules teach, hooks block.** Rules are text the AI reads; whether it complies is probabilistic. Hooks are programs that run outside the AI; blocked means blocked. Anything that can be written as "if … then not allowed" belongs in hooks; style and preference, which no program can judge, belong in rules.
+The first three are "text for the AI to read"; the fourth, hooks, is different and gets its own section next.
 
 <br>
 
-### 5. What each category produces
+### 5. Rules versus hooks
+
+![rules teach, hooks block](docs/assets/rules-teach-hooks-block.en.gif)
+
+**Rules are text; hooks are programs.**
+
+Rules live in `.md` files; the AI reads them and follows them. The AI is probabilistic, though: in a long conversation, or when a rule conflicts with the task, it may not comply. A hook is a small program attached to a fixed moment in the AI's loop, for example "before running any command" (`PreToolUse`): the AI pauses there and hands what it is about to do to your script; exit code 2 blocks it, and the AI cannot opt out.
+
+```
+ rules   the AI reads "never run rm -rf"  ──▶  usually complies, sometimes not
+ hooks   before the AI runs a command ──▶ your script checks ──▶ exit 2 blocks / exit 0 allows
+```
+
+How to split them: anything expressible as "if … then not allowed" (files never to touch, checks that must run, conditions for not stopping) goes in hooks; style and preference, which no program can judge, stay in rules. Use both layers.
+
+In agsy a hook is one more kind of source: a folder with `hook.yaml` (which moment, which script) and the script itself. All four tools have the same hook mechanism; what differs is where and in which format hooks are registered, and that part agsy translates: write `hook.yaml` once, and after `apply` all four registries carry it.
+
+Not using hooks yet is fine: without a `hooks/` folder in the sources, nothing happens at this layer.
+
+<br>
+
+### 6. What each category produces
 
 ```
  source                      output (.agsy/)
@@ -121,7 +137,9 @@ Why a workflow becomes a skill: Claude Code, Codex and Cursor read procedures th
 
 <br>
 
-### 6. What each tool ends up reading
+### 7. What each tool ends up reading
+
+![one set of rules, four tools](docs/assets/four-tools-one-apply.en.gif)
 
 | Tool | rules | skills | workflows | hooks |
 |------|-------|--------|-----------|-------|
@@ -134,7 +152,7 @@ Why a workflow becomes a skill: Claude Code, Codex and Cursor read procedures th
 
 <br>
 
-### 7. One direction only
+### 8. One direction only
 
 ```
  source ──▶ apply ──▶ output ──▶ link ──▶ tool
@@ -144,7 +162,7 @@ The source is the only original. The output, and everything the tools read, is a
 
 <br>
 
-### 8. agsy only writes inside the repository
+### 9. agsy only writes inside the repository
 
 - Sources may live anywhere (a shared library in your home folder, `~/all-ai-lib`); agsy only reads them.
 - The output and the links live inside the project folder.
@@ -152,7 +170,7 @@ The source is the only original. The output, and everything the tools read, is a
 
 <br>
 
-### 9. Naming the source subfolders
+### 10. Naming the source subfolders
 
 agsy looks for `rules/`, `skills/`, `workflows/` and `hooks/` in every source; any may be missing. An existing library that uses other names (`prompts/`, say) can be pointed at through `build.categories.<category>.from` in the config, without moving files; see [Configuration](https://ingsquared99.github.io/agent-sync/#/en/config).
 
