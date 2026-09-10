@@ -103,8 +103,11 @@ winget:
     license: MIT
     license_url: https://github.com/IngSquared99/agent-sync/blob/main/LICENSE
     release_notes_url: https://github.com/IngSquared99/agent-sync/releases/tag/{{ .Tag }}
-    # auto: pre-release tags (v1.2.3-rc1 …) are not submitted to winget
-    skip_upload: auto
+    # true: no winget PR is opened while the first submission
+    # (microsoft/winget-pkgs #426160) awaits moderator approval; set back to
+    # auto afterwards (auto: pre-release tags such as v1.2.3-rc1 are not
+    # submitted).
+    skip_upload: true
     commit_author:
       name: goreleaser-bot
       email: bot@goreleaser.com
