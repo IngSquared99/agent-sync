@@ -7,7 +7,9 @@
 
 > 多來源 AI 指令檔的合併與掛載工具：一份來源，同步 Claude Code、Codex、Antigravity 等多個 AI 工具。
 
-**[📘 完整說明文件](https://ingsquared99.github.io/agent-sync/#/zh-TW/)** ｜ [English README](README.md)
+[English README](README.md) ｜ **繁體中文 README**
+
+📘 完整說明：[English](https://ingsquared99.github.io/agent-sync/#/en/) ｜ [繁體中文](https://ingsquared99.github.io/agent-sync/#/zh-TW/)
 
 ---
 

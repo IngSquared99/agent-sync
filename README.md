@@ -7,7 +7,9 @@
 
 > Merge & mount tool for multi-source AI instruction files: one set of sources, synced to Claude Code, Codex, Antigravity, and more.
 
-**[📘 Full documentation](https://ingsquared99.github.io/agent-sync/#/en/)** ｜ [繁體中文 README](README.zh-TW.md)
+**English README** ｜ [繁體中文 README](README.zh-TW.md)
+
+📘 Full guide: [English](https://ingsquared99.github.io/agent-sync/#/en/) ｜ [繁體中文](https://ingsquared99.github.io/agent-sync/#/zh-TW/)
 
 ---
 
