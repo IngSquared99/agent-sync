@@ -7,9 +7,10 @@ Pick one method for your operating system. Confirm with `agsy version` afterward
 | Your system | Use | Needs |
 |-------------|-----|-------|
 | macOS | Method 1: Homebrew | Homebrew installed |
-| Windows 10 / 11, Linux, or building yourself | Method 2: Go source | Go 1.22 or newer |
+| Windows 10 / 11 | Method 1: winget | built into Windows, nothing to install |
+| Linux, or building yourself | Method 2: Go source | Go 1.22 or newer |
 
-Method 1 downloads the prebuilt binary from GitHub Releases, compiled by a public CI run from public source; the install definition pins each file's SHA-256 checksum. Method 2 compiles the source on your own machine; there is no winget package for Windows yet, use Method 2 there. agsy has no external dependencies.
+Method 1 downloads the prebuilt binary from GitHub Releases, compiled by a public CI run from public source; the install definition pins each file's SHA-256 checksum. Method 2 compiles the source on your own machine. agsy has no external dependencies.
 
 ## 2. Install
 
@@ -20,6 +21,14 @@ brew install ingsquared99/tap/agsy
 ```
 
 The matching Apple Silicon or Intel build is picked automatically. The first run does not show an "unverified developer" warning. Without Homebrew: install it per <https://brew.sh>.
+
+### Method 1: winget (Windows)
+
+```sh
+winget install IngSquared99.agsy
+```
+
+winget is the package manager built into Windows 10 / 11; the matching x64 or ARM64 build is picked automatically. Open a **new terminal window** after installing before running `agsy`.
 
 ### Method 2: from source (any platform)
 
@@ -93,10 +102,10 @@ export AGSY_LANG=en       # English
 
 ## 5. Upgrade and remove
 
-| | Homebrew | Go |
-|---|---|---|
-| Upgrade | `brew upgrade agsy` | rerun `go install …@latest` |
-| Remove | `brew uninstall agsy` | delete `~/go/bin/agsy` |
+| | Homebrew | winget | Go |
+|---|---|---|---|
+| Upgrade | `brew upgrade agsy` | `winget upgrade IngSquared99.agsy` | rerun `go install …@latest` |
+| Remove | `brew uninstall agsy` | `winget uninstall IngSquared99.agsy` | delete `~/go/bin/agsy` |
 
 Before removing, run `agsy clean` in every project that used agsy (it removes the links and `.agsy/`; `agsy.yaml` stays, delete it yourself if unwanted).
 

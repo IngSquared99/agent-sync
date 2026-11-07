@@ -7,9 +7,10 @@
 | 你的系統 | 用這個 | 事前需要 |
 |---------|--------|---------|
 | macOS | 方式一：Homebrew | 已裝 Homebrew |
-| Windows 10 / 11、Linux，或想自己編譯 | 方式二：Go 原始碼 | 已裝 Go 1.22 以上 |
+| Windows 10 / 11 | 方式一：winget | Windows 內建，不用另外裝 |
+| Linux，或想自己編譯 | 方式二：Go 原始碼 | 已裝 Go 1.22 以上 |
 
-方式一下載的是 GitHub Release 上的預編譯執行檔，由公開的 CI 從公開原始碼自動編譯，安裝設定裡寫死了檔案的 SHA-256 校驗碼。方式二是在你的電腦上從原始碼編譯；Windows 目前沒有 winget 套件，請走方式二。agsy 不依賴任何外部套件。
+方式一下載的是 GitHub Release 上的預編譯執行檔，由公開的 CI 從公開原始碼自動編譯，安裝設定裡寫死了檔案的 SHA-256 校驗碼。方式二是在你的電腦上從原始碼編譯。agsy 不依賴任何外部套件。
 
 ## 二、安裝
 
@@ -20,6 +21,14 @@ brew install ingsquared99/tap/agsy
 ```
 
 會自動抓對應 Apple Silicon 或 Intel 的版本。第一次執行不會出現「無法驗證開發者」的警告。還沒有 Homebrew：依 <https://brew.sh> 安裝。
+
+### 方式一：winget（Windows）
+
+```sh
+winget install IngSquared99.agsy
+```
+
+winget 是 Windows 10 / 11 內建的套件管理員，會自動抓對應 x64 或 ARM64 的版本。裝完**重開一個新的終端機視窗**再執行 `agsy`。
 
 ### 方式二：從原始碼（全平台）
 
@@ -93,10 +102,10 @@ export AGSY_LANG=en       # 用英文
 
 ## 五、升級與移除
 
-| | Homebrew | Go |
-|---|---|---|
-| 升級 | `brew upgrade agsy` | 重跑 `go install …@latest` |
-| 移除 | `brew uninstall agsy` | 刪 `~/go/bin/agsy` |
+| | Homebrew | winget | Go |
+|---|---|---|---|
+| 升級 | `brew upgrade agsy` | `winget upgrade IngSquared99.agsy` | 重跑 `go install …@latest` |
+| 移除 | `brew uninstall agsy` | `winget uninstall IngSquared99.agsy` | 刪 `~/go/bin/agsy` |
 
 移除前，先在每個用過 agsy 的專案跑 `agsy clean`（移除連結與 `.agsy/`；`agsy.yaml` 會留下，不要的話自己刪）。
 
